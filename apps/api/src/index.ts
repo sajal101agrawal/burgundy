@@ -10,6 +10,7 @@ import { logger } from "@concierge/logger";
 import { handleInbound, inMemoryRoutingContext } from "@concierge/routing-service";
 import { classifyInterrupt } from "@concierge/interrupt-classifier";
 import { QUEUE_NAMES } from "@concierge/queue";
+import { userAsk } from "@concierge/proactive-messaging";
 
 const app = Fastify({ logger: logger as any });
 
@@ -23,6 +24,7 @@ const internalToken = process.env.PLATFORM_INTERNAL_TOKEN?.trim();
 const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 const redisConnection = new IORedis(redisUrl);
 const provisionQueue = new Queue(QUEUE_NAMES.PROVISION_USER, { connection: redisConnection });
+const sendQueue = new Queue(QUEUE_NAMES.SEND_WHATSAPP, { connection: redisConnection });
 
 const requireInternalAuth = (request: any, reply: any): boolean => {
   if (!internalToken) {
@@ -121,6 +123,32 @@ app.post("/internal/interrupt-classify", async (request, reply) => {
     newMessage: payload.body
   });
   return { classification: result.classification };
+});
+
+app.post("/internal/user-ask", async (request, reply) => {
+  if (!requireInternalAuth(request, reply)) {
+    return;
+  }
+  const schema = z.object({
+    userId: z.string(),
+    message: z.string().min(1),
+    type: z.enum(["otp", "confirm", "choice", "info"]),
+    timeoutSeconds: z.number().int().positive().max(900).optional()
+  });
+  const payload = schema.parse(request.body);
+
+  await sendQueue.add(
+    QUEUE_NAMES.SEND_WHATSAPP,
+    { userId: payload.userId, message: payload.message },
+    { removeOnComplete: true, removeOnFail: 50 }
+  );
+
+  const response = await userAsk(payload.userId, payload.message, {
+    type: payload.type,
+    timeoutSeconds: payload.timeoutSeconds ?? 300
+  });
+
+  return { response };
 });
 
 app.post("/auth/register", async (request) => {
