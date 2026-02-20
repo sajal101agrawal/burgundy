@@ -72,6 +72,8 @@ services:
     environment:
       - OPENCLAW_WORKSPACE=/workspace
       - OPENCLAW_AGENT_ID=dev-user
+      - OPENCLAW_CONFIG_JSON={"gateway":{"mode":"local"},"channels":{"whatsapp":{"allowFrom":["*"]}}}
+      - PLATFORM_API_URL=http://api:3000
       - OPENCLAW_WHATSAPP_INTERNAL_PORT=18800
       - OPENCLAW_WHATSAPP_INTERNAL_HOST=0.0.0.0
       - OPENCLAW_WHATSAPP_INTERNAL_PATH=/internal/whatsapp/inbound

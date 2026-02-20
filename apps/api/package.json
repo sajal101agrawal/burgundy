@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@concierge/config": "workspace:*",
+    "@concierge/interrupt-classifier": "workspace:*",
     "@concierge/logger": "workspace:*",
     "@concierge/routing-service": "workspace:*",
     "@concierge/types": "workspace:*",

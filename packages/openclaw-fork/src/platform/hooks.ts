@@ -28,8 +28,56 @@ async function resolveHooks(): Promise<PlatformHooks | null> {
   }
 
   const modulePath = process.env.OPENCLAW_PLATFORM_HOOKS?.trim();
+  const platformApi = process.env.PLATFORM_API_URL?.trim();
+  const platformToken = process.env.PLATFORM_INTERNAL_TOKEN?.trim();
   if (!modulePath) {
-    return null;
+    if (!platformApi) {
+      return null;
+    }
+    return {
+      checkPendingListener: async ({ senderId, message }) => {
+        try {
+          const response = await fetch(`${platformApi}/internal/pending-listener/check`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              ...(platformToken ? { authorization: `Bearer ${platformToken}` } : {}),
+            },
+            body: JSON.stringify({ senderId, body: message.body }),
+          });
+          if (!response.ok) {
+            return false;
+          }
+          const payload = (await response.json().catch(() => null)) as { handled?: boolean } | null;
+          return Boolean(payload?.handled);
+        } catch (error) {
+          hookLogger.warn({ error: String(error) }, "platform API pending listener failed");
+          return false;
+        }
+      },
+      classifyInterrupt: async ({ senderId, message }) => {
+        try {
+          const response = await fetch(`${platformApi}/internal/interrupt-classify`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              ...(platformToken ? { authorization: `Bearer ${platformToken}` } : {}),
+            },
+            body: JSON.stringify({ senderId, body: message.body }),
+          });
+          if (!response.ok) {
+            return undefined;
+          }
+          const payload = (await response.json().catch(() => null)) as
+            | { classification?: string | null }
+            | null;
+          return typeof payload?.classification === "string" ? payload?.classification : undefined;
+        } catch (error) {
+          hookLogger.warn({ error: String(error) }, "platform API interrupt classify failed");
+          return undefined;
+        }
+      },
+    } satisfies PlatformHooks;
   }
 
   if (moduleAttempted) {
