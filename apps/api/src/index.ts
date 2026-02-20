@@ -12,6 +12,10 @@ const app = Fastify({ logger: logger as any });
 await app.register(cors, { origin: true });
 await app.register(jwt, { secret: getEnv("JWT_SECRET", "dev-secret") });
 
+const defaultInstanceEndpoint =
+  process.env.OPENCLAW_INTERNAL_BASE_URL || "http://openclaw:18800";
+const defaultAccountId = process.env.WHATSAPP_ACCOUNT_ID || "default";
+
 app.decorate("authenticate", async (request: any, reply: any) => {
   try {
     await request.jwtVerify();
@@ -25,8 +29,17 @@ app.get("/health", async () => ({ status: "ok" }));
 const devUserPhone = process.env.DEV_USER_PHONE;
 if (devUserPhone) {
   const devUserId = process.env.DEV_USER_ID || "dev-user";
-  inMemoryRoutingContext.registerUser(devUserPhone, devUserId);
-  app.log.info({ devUserPhone, devUserId }, "registered dev user for routing");
+  const devInstanceEndpoint = process.env.DEV_INSTANCE_ENDPOINT || defaultInstanceEndpoint;
+  const devAccountId = process.env.DEV_WHATSAPP_ACCOUNT_ID || defaultAccountId;
+  inMemoryRoutingContext.registerUser(devUserPhone, {
+    userId: devUserId,
+    instanceEndpoint: devInstanceEndpoint,
+    accountId: devAccountId,
+  });
+  app.log.info(
+    { devUserPhone, devUserId, devInstanceEndpoint, devAccountId },
+    "registered dev user for routing",
+  );
 }
 
 app.post("/webhook/whatsapp", async (request) => {
@@ -50,9 +63,16 @@ app.post("/auth/register", async (request) => {
   const payload = schema.parse(request.body);
 
   const userId = randomUUID();
-  inMemoryRoutingContext.registerUser(payload.phone, userId);
-  app.log.info({ phone: payload.phone, userId }, "register stub queued");
-  return { status: "queued", userId };
+  inMemoryRoutingContext.registerUser(payload.phone, {
+    userId,
+    instanceEndpoint: defaultInstanceEndpoint,
+    accountId: defaultAccountId,
+  });
+  app.log.info(
+    { phone: payload.phone, userId, instanceEndpoint: defaultInstanceEndpoint },
+    "register stub queued",
+  );
+  return { status: "queued", userId, instanceEndpoint: defaultInstanceEndpoint };
 });
 
 app.post("/auth/login", async (request) => {
