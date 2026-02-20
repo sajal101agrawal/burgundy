@@ -5,6 +5,7 @@ import { logVerbose } from "../../../globals.js";
 import { resolveAgentRoute } from "../../../routing/resolve-route.js";
 import { buildGroupHistoryKey } from "../../../routing/session-key.js";
 import { normalizeE164 } from "../../../utils.js";
+import { checkPendingListener, classifyInterrupt } from "../../../platform/hooks.js";
 import type { MentionConfig } from "../mentions.js";
 import type { WebInboundMsg } from "../types.js";
 import { maybeBroadcastMessage } from "./broadcast.js";
@@ -61,6 +62,20 @@ export function createWebOnMessageHandler(params: {
     });
 
   return async (msg: WebInboundMsg) => {
+    const senderId = msg.senderE164 ?? msg.senderJid ?? msg.from;
+    if (senderId) {
+      const pendingHandled = await checkPendingListener({ senderId, message: msg });
+      if (pendingHandled) {
+        return;
+      }
+      if (!(msg as WebInboundMsg & { classification?: string }).classification) {
+        const classification = await classifyInterrupt({ senderId, message: msg });
+        if (classification) {
+          (msg as WebInboundMsg & { classification?: string }).classification = classification;
+        }
+      }
+    }
+
     const conversationId = msg.conversationId ?? msg.from;
     const peerId = resolvePeerId(msg);
     // Fresh config for bindings lookup; other routing inputs are payload-derived.

@@ -14,7 +14,7 @@ import { resolveAgentRoute } from "../../routing/resolve-route.js";
 import { defaultRuntime, type RuntimeEnv } from "../../runtime.js";
 import { resolveWhatsAppAccount } from "../accounts.js";
 import { setActiveWebListener } from "../active-listener.js";
-import { monitorWebInbox } from "../inbound.js";
+import { monitorWebInbox, startInternalWebInboundServer } from "../inbound.js";
 import {
   computeBackoff,
   newConnectionId,
@@ -113,6 +113,25 @@ export async function monitorWebChannel(
   const groupMemberNames = new Map<string, Map<string, string>>();
   const echoTracker = createEchoTracker({ maxItems: 100, logVerbose });
 
+  let inboundHandler: ((msg: WebInboundMsg) => Promise<void>) | null = null;
+  const internalPortRaw = process.env.OPENCLAW_WHATSAPP_INTERNAL_PORT?.trim();
+  const internalPort = internalPortRaw ? Number.parseInt(internalPortRaw, 10) : null;
+  const internalHost = process.env.OPENCLAW_WHATSAPP_INTERNAL_HOST?.trim() || "127.0.0.1";
+  const internalPath =
+    process.env.OPENCLAW_WHATSAPP_INTERNAL_PATH?.trim() || "/internal/whatsapp/inbound";
+  const internalToken = process.env.OPENCLAW_WHATSAPP_INTERNAL_TOKEN?.trim();
+  const internalServer =
+    internalPort && Number.isFinite(internalPort) && internalPort > 0
+      ? await startInternalWebInboundServer({
+          port: internalPort,
+          host: internalHost,
+          path: internalPath,
+          token: internalToken,
+          accountId: account.accountId,
+          getHandler: () => inboundHandler,
+        })
+      : null;
+
   const sleep =
     tuning.sleep ??
     ((ms: number, signal?: AbortSignal) => sleepWithAbort(ms, signal ?? abortSignal));
@@ -174,6 +193,7 @@ export async function monitorWebChannel(
       baseMentionConfig,
       account,
     });
+    inboundHandler = onMessage;
 
     const inboundDebounceMs = resolveInboundDebounceMs({ cfg, channel: "whatsapp" });
     const shouldDebounce = (msg: WebInboundMsg) => {
@@ -245,6 +265,7 @@ export async function monitorWebChannel(
 
     const closeListener = async () => {
       setActiveWebListener(account.accountId, null);
+      inboundHandler = null;
       if (unregisterUnhandled) {
         unregisterUnhandled();
         unregisterUnhandled = null;
@@ -447,6 +468,10 @@ export async function monitorWebChannel(
   status.connected = false;
   status.lastEventAt = Date.now();
   emitStatus();
+
+  if (internalServer) {
+    internalServer.stop();
+  }
 
   process.removeListener("SIGINT", handleSigint);
 }

@@ -529,6 +529,21 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
   function loadConfig(): OpenClawConfig {
     try {
       maybeLoadDotEnvForConfig(deps.env);
+      const envConfigRaw = deps.env.OPENCLAW_CONFIG_JSON?.trim();
+      let envConfigResolved: unknown | null = null;
+      if (envConfigRaw) {
+        try {
+          const parsedEnv = deps.json5.parse(envConfigRaw);
+          const { resolvedConfigRaw } = resolveConfigForRead(parsedEnv, deps.env);
+          envConfigResolved = resolvedConfigRaw;
+        } catch (error) {
+          deps.logger.error("Failed to parse OPENCLAW_CONFIG_JSON", error);
+          envConfigResolved = null;
+        }
+      }
+      const envConfig =
+        envConfigResolved && isPlainObject(envConfigResolved) ? envConfigResolved : null;
+
       if (!deps.fs.existsSync(configPath)) {
         if (shouldEnableShellEnvFallback(deps.env) && !shouldDeferShellEnvFallback(deps.env)) {
           loadShellEnvFallback({
@@ -539,14 +554,88 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
             timeoutMs: resolveShellEnvFallbackTimeoutMs(deps.env),
           });
         }
-        return {};
+        if (!envConfig) {
+          return {};
+        }
+        const mergedConfig = envConfig;
+        warnOnConfigMiskeys(mergedConfig, deps.logger);
+        if (typeof mergedConfig !== "object" || mergedConfig === null) {
+          return {};
+        }
+        const preValidationDuplicates = findDuplicateAgentDirs(mergedConfig as OpenClawConfig, {
+          env: deps.env,
+          homedir: deps.homedir,
+        });
+        if (preValidationDuplicates.length > 0) {
+          throw new DuplicateAgentDirError(preValidationDuplicates);
+        }
+        const validated = validateConfigObjectWithPlugins(mergedConfig);
+        if (!validated.ok) {
+          const details = validated.issues
+            .map((iss) => `- ${iss.path || "<root>"}: ${iss.message}`)
+            .join("\n");
+          if (!loggedInvalidConfigs.has(configPath)) {
+            loggedInvalidConfigs.add(configPath);
+            deps.logger.error(`Invalid config from OPENCLAW_CONFIG_JSON:\\n${details}`);
+          }
+          const error = new Error("Invalid config");
+          (error as { code?: string; details?: string }).code = "INVALID_CONFIG";
+          (error as { code?: string; details?: string }).details = details;
+          throw error;
+        }
+        if (validated.warnings.length > 0) {
+          const details = validated.warnings
+            .map((iss) => `- ${iss.path || "<root>"}: ${iss.message}`)
+            .join("\n");
+          deps.logger.warn(`Config warnings:\\n${details}`);
+        }
+        warnIfConfigFromFuture(validated.config, deps.logger);
+        const cfg = applyModelDefaults(
+          applyCompactionDefaults(
+            applyContextPruningDefaults(
+              applyAgentDefaults(
+                applySessionDefaults(applyLoggingDefaults(applyMessageDefaults(validated.config))),
+              ),
+            ),
+          ),
+        );
+        normalizeConfigPaths(cfg);
+
+        const duplicates = findDuplicateAgentDirs(cfg, {
+          env: deps.env,
+          homedir: deps.homedir,
+        });
+        if (duplicates.length > 0) {
+          throw new DuplicateAgentDirError(duplicates);
+        }
+
+        applyConfigEnvVars(cfg, deps.env);
+
+        const enabled =
+          shouldEnableShellEnvFallback(deps.env) || cfg.env?.shellEnv?.enabled === true;
+        if (enabled && !shouldDeferShellEnvFallback(deps.env)) {
+          loadShellEnvFallback({
+            enabled: true,
+            env: deps.env,
+            expectedKeys: SHELL_ENV_EXPECTED_KEYS,
+            logger: deps.logger,
+            timeoutMs: cfg.env?.shellEnv?.timeoutMs ?? resolveShellEnvFallbackTimeoutMs(deps.env),
+          });
+        }
+
+        return applyConfigOverrides(cfg);
       }
       const raw = deps.fs.readFileSync(configPath, "utf-8");
       const parsed = deps.json5.parse(raw);
-      const { resolvedConfigRaw: resolvedConfig } = resolveConfigForRead(
+      let { resolvedConfigRaw: resolvedConfig } = resolveConfigForRead(
         resolveConfigIncludesForRead(parsed, configPath, deps),
         deps.env,
       );
+      if (envConfig) {
+        resolvedConfig = applyMergePatch(resolvedConfig, envConfig, {
+          mergeObjectArraysById: true,
+        });
+      }
       warnOnConfigMiskeys(resolvedConfig, deps.logger);
       if (typeof resolvedConfig !== "object" || resolvedConfig === null) {
         return {};

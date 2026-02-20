@@ -177,6 +177,12 @@ export function resolveEffectiveModelFallbacks(params: {
 
 export function resolveAgentWorkspaceDir(cfg: OpenClawConfig, agentId: string) {
   const id = normalizeAgentId(agentId);
+  const workspaceOverride = process.env.OPENCLAW_WORKSPACE?.trim();
+  if (workspaceOverride) {
+    const base = resolveUserPath(workspaceOverride);
+    const defaultAgentId = resolveDefaultAgentId(cfg);
+    return id === defaultAgentId ? base : path.join(base, `workspace-${id}`);
+  }
   const configured = resolveAgentConfig(cfg, id)?.workspace?.trim();
   if (configured) {
     return resolveUserPath(configured);
