@@ -1,0 +1,79 @@
+version: "3.9"
+
+services:
+  api:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm install && pnpm --filter @concierge/api build && node apps/api/dist/index.js"
+    volumes:
+      - ../../:/app
+    environment:
+      - PORT=3000
+      - JWT_SECRET=dev-secret
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+      - redis
+
+  worker:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm install && pnpm --filter @concierge/worker build && node apps/worker/dist/index.js"
+    volumes:
+      - ../../:/app
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+
+  web:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm install && pnpm --filter @concierge/web dev -- --hostname 0.0.0.0 --port 3001"
+    volumes:
+      - ../../:/app
+    environment:
+      - PORT=3001
+    ports:
+      - "3001:3001"
+
+  vault:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm install && pnpm --filter @concierge/vault-service build && node packages/vault-service/dist/index.js"
+    volumes:
+      - ../../:/app
+    environment:
+      - PORT=3002
+    ports:
+      - "3002:3002"
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=concierge
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  openclaw:
+    build:
+      context: ../../
+      dockerfile: infra/docker/openclaw-agent/Dockerfile
+    environment:
+      - OPENCLAW_WORKSPACE=/workspace
+      - OPENCLAW_AGENT_ID=dev-user
+    ports:
+      - "18789:18789"
+    volumes:
+      - openclaw-workspace:/workspace
+
+volumes:
+  openclaw-workspace:
