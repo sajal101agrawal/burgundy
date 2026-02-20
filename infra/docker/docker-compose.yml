@@ -12,6 +12,7 @@ services:
       - JWT_SECRET=dev-secret
       - OPENCLAW_INTERNAL_BASE_URL=http://openclaw:18800
       - WHATSAPP_ACCOUNT_ID=default
+      - REDIS_URL=redis://redis:6379
       - DEV_USER_PHONE=${DEV_USER_PHONE}
       - DEV_USER_ID=${DEV_USER_ID}
       - DEV_INSTANCE_ENDPOINT=${DEV_INSTANCE_ENDPOINT}
@@ -29,6 +30,7 @@ services:
       - ../../:/app
     environment:
       - REDIS_URL=redis://redis:6379
+      - PLATFORM_API_URL=http://api:3000
     depends_on:
       - redis
 

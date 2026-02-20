@@ -2,11 +2,14 @@ import { randomUUID } from "node:crypto";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
+import { Queue } from "bullmq";
+import IORedis from "ioredis";
 import { z } from "zod";
 import { getEnv } from "@concierge/config";
 import { logger } from "@concierge/logger";
 import { handleInbound, inMemoryRoutingContext } from "@concierge/routing-service";
 import { classifyInterrupt } from "@concierge/interrupt-classifier";
+import { QUEUE_NAMES } from "@concierge/queue";
 
 const app = Fastify({ logger: logger as any });
 
@@ -17,6 +20,9 @@ const defaultInstanceEndpoint =
   process.env.OPENCLAW_INTERNAL_BASE_URL || "http://openclaw:18800";
 const defaultAccountId = process.env.WHATSAPP_ACCOUNT_ID || "default";
 const internalToken = process.env.PLATFORM_INTERNAL_TOKEN?.trim();
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+const redisConnection = new IORedis(redisUrl);
+const provisionQueue = new Queue(QUEUE_NAMES.PROVISION_USER, { connection: redisConnection });
 
 const requireInternalAuth = (request: any, reply: any): boolean => {
   if (!internalToken) {
@@ -126,16 +132,20 @@ app.post("/auth/register", async (request) => {
   const payload = schema.parse(request.body);
 
   const userId = randomUUID();
-  inMemoryRoutingContext.registerUser(payload.phone, {
-    userId,
-    instanceEndpoint: defaultInstanceEndpoint,
-    accountId: defaultAccountId,
-  });
-  app.log.info(
-    { phone: payload.phone, userId, instanceEndpoint: defaultInstanceEndpoint },
-    "register stub queued",
+  const personaName = payload.personaName || "Concierge";
+  await provisionQueue.add(
+    QUEUE_NAMES.PROVISION_USER,
+    {
+      userId,
+      phone: payload.phone,
+      personaName,
+      instanceEndpoint: defaultInstanceEndpoint
+    },
+    { removeOnComplete: true, removeOnFail: 50 }
   );
-  return { status: "queued", userId, instanceEndpoint: defaultInstanceEndpoint };
+
+  app.log.info({ phone: payload.phone, userId }, "register queued");
+  return { status: "queued", userId };
 });
 
 app.post("/auth/login", async (request) => {
@@ -161,13 +171,26 @@ app.get("/me/audit", { preHandler: [app.authenticate as any] }, async () => {
   return { events: [] };
 });
 
-app.post("/internal/provision", async (request) => {
+app.post("/internal/provision", async (request, reply) => {
+  if (!requireInternalAuth(request, reply)) {
+    return;
+  }
   const schema = z.object({
     userId: z.string(),
+    phone: z.string().optional(),
     status: z.enum(["provisioned", "failed"]),
-    instanceEndpoint: z.string().optional()
+    instanceEndpoint: z.string().optional(),
+    personaName: z.string().optional()
   });
   const payload = schema.parse(request.body);
+
+  if (payload.status === "provisioned" && payload.phone && payload.instanceEndpoint) {
+    inMemoryRoutingContext.registerUser(payload.phone, {
+      userId: payload.userId,
+      instanceEndpoint: payload.instanceEndpoint,
+      accountId: defaultAccountId
+    });
+  }
 
   app.log.info({ payload }, "provision callback received");
   return { ok: true };

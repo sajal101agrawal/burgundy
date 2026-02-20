@@ -10,18 +10,22 @@ export interface ProvisionResult {
 }
 
 export const provisionUser = async (input: {
+  userId?: string;
   phone: string;
   personaName: string;
+  instanceEndpoint?: string;
 }): Promise<ProvisionResult> => {
   logger.info({ phone: input.phone }, "provisioning user stub");
 
+  const instanceEndpoint = input.instanceEndpoint || "http://openclaw:18800";
+
   const user: User = {
-    id: randomUUID(),
+    id: input.userId || randomUUID(),
     phone: input.phone,
     platformEmail: `${input.personaName.toLowerCase()}@platform.local`,
     platformPhone: "+10000000000",
     personaName: input.personaName,
-    instanceEndpoint: "http://openclaw:18789",
+    instanceEndpoint,
     provisionedAt: new Date().toISOString(),
     createdAt: new Date().toISOString()
   };
