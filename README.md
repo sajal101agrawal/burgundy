@@ -17,5 +17,18 @@ This repository scaffolds the AI Concierge Platform described in the February 20
 1. Install dependencies: `pnpm install`
 2. Start services via Docker Compose: `docker compose -f infra/docker/docker-compose.yml up`
 
+## Local webhook test
+To simulate a WhatsApp inbound message:
+
+```bash
+DEV_USER_PHONE="+15551234567" docker compose -f infra/docker/docker-compose.yml up
+```
+
+Then in another shell:
+
+```bash
+FROM_NUMBER="+15551234567" BODY="hello concierge" ./scripts/send-whatsapp-webhook.sh
+```
+
 ## OpenClaw fork
 Add the subtree to `packages/openclaw-fork` as described in `packages/openclaw-fork/README.md`.

@@ -12,6 +12,9 @@ services:
       - JWT_SECRET=dev-secret
       - OPENCLAW_INTERNAL_BASE_URL=http://openclaw:18800
       - WHATSAPP_ACCOUNT_ID=default
+      - DEV_USER_PHONE=${DEV_USER_PHONE}
+      - DEV_USER_ID=${DEV_USER_ID}
+      - DEV_INSTANCE_ENDPOINT=${DEV_INSTANCE_ENDPOINT}
     ports:
       - "3000:3000"
     depends_on:
