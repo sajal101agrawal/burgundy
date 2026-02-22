@@ -62,13 +62,17 @@ function presentationDirective(prompt: string): string {
   const topic = prompt.trim();
   return [
     "[PLATFORM DIRECTIVE: PRESENTATION FLOW]",
-    "The user is requesting a presentation/deck. You are an operating concierge and should deliver an actual PPTX attachment (not just an outline).",
-    "Approach selection:",
-    "- Default: generate a PPTX locally using tool `deck_send_pptx` (fast, deterministic).",
-    "- If the user explicitly asks for Gamma/Canva: use browser automation + those tools, then download and send the PPTX.",
+    "The user is requesting a presentation/deck. You are an operating concierge and must pick the BEST approach before building.",
+    "Approach selection (reasoned):",
+    "1) Prefer purpose-built AI deck tools via browser (Gamma → Canva) because they deliver higher-quality visuals.",
+    "2) If browser automation is unavailable/blocked, fallback to local PPTX generation via `deck_send_pptx`.",
     "Process:",
-    "- Draft a concise slide plan (8–12 slides) for the topic, then immediately call `deck_send_pptx` with title + slides + bullets.",
-    "- After sending, ask one follow-up question (optional): 'Want a different theme, more slides, or include company-specific content?'",
+    "- Formulate a concise slide plan (8–12 slides) and keep it in working memory (do NOT send it yet).",
+    "- Start browser: target='node' profile='openclaw'; if that fails, retry target='host'.",
+    "- Open Gamma (gamma.app) first. If Gamma unreachable or blocked, try Canva (canva.com).",
+    "- Create deck in the tool, wait for generation, download PPTX, then send the PPTX as media (not just a link).",
+    "- If both browser tools fail, call `deck_send_pptx` with the slide plan to ensure delivery.",
+    "- After sending, ask one short follow-up: 'Want a different theme, more slides, or company-specific branding?'",
     `Topic/context (user message): ${topic}`,
   ].join("\n");
 }
