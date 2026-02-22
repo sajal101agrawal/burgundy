@@ -13,6 +13,7 @@ type Category =
   | "video"
   | "research"
   | "document"
+  | "email"
   | "order"
   | "generic";
 
@@ -38,6 +39,7 @@ const detectCategory = (text: string): Category => {
   if (/\b(video|edit video|clip|reel)\b/.test(t)) return "video";
   if (/(research|report|compare|analy[sz]e|investigate|find out)/.test(t)) return "research";
   if (/(document|docx|pdf|policy|contract)/.test(t)) return "document";
+  if (/(email|inbox|mailbox|gmail|outlook|office 365|o365|m365)/.test(t)) return "email";
   if (/(order|buy|purchase|get me)/.test(t)) return "order";
   return "generic";
 };
@@ -76,6 +78,10 @@ const defaultTools: Record<Category, ToolRegistryEntry[]> = {
   ],
   document: [
     { toolId: "agent-inline", name: "Agent Inline", category: ["document"], invocationType: "inline", config: {}, qualityScore: 0.6 }
+  ],
+  email: [
+    { toolId: "browser-email", name: "Browser Email", category: ["email"], invocationType: "browser", config: {}, qualityScore: 0.65 },
+    { toolId: "agent-inline", name: "Agent Inline", category: ["email"], invocationType: "inline", config: {}, qualityScore: 0.55 }
   ],
   order: [
     { toolId: "browser-order", name: "Browser Ordering", category: ["order"], invocationType: "browser", config: {}, qualityScore: 0.6 }
