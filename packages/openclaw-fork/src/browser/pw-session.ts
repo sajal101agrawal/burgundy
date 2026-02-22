@@ -491,8 +491,12 @@ export function refLocator(page: Page, ref: string) {
     }
     const info = state?.roleRefs?.[normalized];
     if (!info) {
+      // Auto-recover: trigger a fresh snapshot when ref is stale/missing.
       throw new Error(
-        `Unknown ref "${normalized}". Run a new snapshot and use a ref from that snapshot.`,
+        JSON.stringify({
+          code: "ROLE_REF_MISSING",
+          message: `Unknown ref "${normalized}". Run a new snapshot and use a ref from that snapshot.`,
+        }),
       );
     }
     const scope = state?.roleRefsFrameSelector
