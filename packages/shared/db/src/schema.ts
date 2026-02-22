@@ -39,10 +39,11 @@ export const listenerTypeEnum = pgEnum("listener_type", [
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().notNull(),
   phone: varchar("phone", { length: 32 }).unique().notNull(),
-  platformEmail: varchar("platform_email", { length: 255 }).notNull(),
-  platformPhone: varchar("platform_phone", { length: 32 }).notNull(),
+  passwordHash: text("password_hash").notNull(),
+  platformEmail: varchar("platform_email", { length: 255 }),
+  platformPhone: varchar("platform_phone", { length: 32 }),
   personaName: varchar("persona_name", { length: 64 }).notNull(),
-  instanceEndpoint: varchar("instance_endpoint", { length: 512 }).notNull(),
+  instanceEndpoint: varchar("instance_endpoint", { length: 512 }),
   containerId: varchar("container_id", { length: 128 }),
   provisionedAt: timestamp("provisioned_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -80,6 +81,14 @@ export const vaultEntries = pgTable("vault_entries", {
   createdBy: varchar("created_by", { length: 16 }).notNull(),
   sharedWith: jsonb("shared_with").default([]).notNull(),
   lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull()
+});
+
+export const vaultKeys = pgTable("vault_keys", {
+  userId: uuid("user_id").primaryKey().notNull(),
+  encryptedKey: text("encrypted_key").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull()

@@ -55,6 +55,51 @@ export async function getReplyFromConfig(
   opts?: GetReplyOptions,
   configOverride?: OpenClawConfig,
 ): Promise<ReplyPayload | ReplyPayload[] | undefined> {
+  // PLATFORM HOOK 1: Resolve pending listeners (OTP / confirm / choice) before normal routing.
+  // This enables `otp_request` / `user.ask` flows to resume even when OpenClaw is directly
+  // connected to WhatsApp (Baileys). Without this, replies like "847291" get treated as new tasks.
+  const senderId =
+    (typeof ctx.SenderE164 === "string" && ctx.SenderE164.trim()) ||
+    (typeof ctx.SenderId === "string" && ctx.SenderId.trim()) ||
+    "";
+  const bodyForListener =
+    (typeof ctx.BodyForCommands === "string" && ctx.BodyForCommands.trim()) ||
+    (typeof ctx.CommandBody === "string" && ctx.CommandBody.trim()) ||
+    (typeof ctx.RawBody === "string" && ctx.RawBody.trim()) ||
+    (typeof ctx.Body === "string" && ctx.Body.trim()) ||
+    "";
+  if (senderId && bodyForListener) {
+    const platformApi = process.env.PLATFORM_API_URL?.trim();
+    if (platformApi) {
+      try {
+        const url = `${platformApi.replace(/\/$/, "")}/internal/pending-listener/check`;
+        const headers: Record<string, string> = { "content-type": "application/json" };
+        const token = process.env.PLATFORM_INTERNAL_TOKEN?.trim();
+        if (token) headers.authorization = `Bearer ${token}`;
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(new Error("timeout")), 2000);
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ senderId, body: bodyForListener }),
+            signal: ctrl.signal,
+          });
+          if (res.ok) {
+            const json = (await res.json().catch(() => null)) as { handled?: unknown } | null;
+            if (json && json.handled === true) {
+              return { text: SILENT_REPLY_TOKEN };
+            }
+          }
+        } finally {
+          clearTimeout(t);
+        }
+      } catch {
+        // Best-effort: ignore platform hook failures and fall back to normal reply handling.
+      }
+    }
+  }
+
   const isFastTestEnv = process.env.OPENCLAW_TEST_FAST === "1";
   const cfg = configOverride ?? loadConfig();
   const targetSessionKey =

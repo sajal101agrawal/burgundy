@@ -1,0 +1,12 @@
+{
+  "id": "deployment-skill",
+  "name": "Deployment Skill",
+  "description": "Deployment workflows (dev-grade implementation; requires explicit confirmation and provider credentials).",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
+

@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "ioredis": "^5.4.1",
     "@concierge/logger": "workspace:*",
     "@concierge/types": "workspace:*"
   }

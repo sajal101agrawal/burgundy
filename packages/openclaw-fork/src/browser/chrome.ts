@@ -179,6 +179,19 @@ export async function launchOpenClawChrome(
   const userDataDir = resolveOpenClawUserDataDir(profile.name);
   fs.mkdirSync(userDataDir, { recursive: true });
 
+  // Docker/dev resilience: after unclean shutdowns, Chromium can leave stale singleton lock files
+  // that block relaunch with "profile appears to be in use...". If the CDP port is available,
+  // we assume no live browser is using this profile and clear these lock files.
+  // https://chromium.googlesource.com/chromium/src/+/main/docs/user_data_dir.md
+  const singletonLocks = ["SingletonLock", "SingletonCookie", "SingletonSocket"];
+  for (const name of singletonLocks) {
+    try {
+      fs.unlinkSync(path.join(userDataDir, name));
+    } catch {
+      // ignore
+    }
+  }
+
   const needsDecorate = !isProfileDecorated(
     userDataDir,
     profile.name,
@@ -285,8 +298,32 @@ export async function launchOpenClawChrome(
   }
 
   const proc = spawnOnce();
+  // Capture some chrome output for debugging startup failures (common in containers).
+  let stderr = "";
+  let stdout = "";
+  const maxLogChars = 8_000;
+  proc.stderr?.setEncoding("utf8");
+  proc.stdout?.setEncoding("utf8");
+  proc.stderr?.on("data", (chunk) => {
+    if (stderr.length >= maxLogChars) return;
+    stderr += String(chunk);
+    if (stderr.length > maxLogChars) stderr = stderr.slice(0, maxLogChars);
+  });
+  proc.stdout?.on("data", (chunk) => {
+    if (stdout.length >= maxLogChars) return;
+    stdout += String(chunk);
+    if (stdout.length > maxLogChars) stdout = stdout.slice(0, maxLogChars);
+  });
+
   // Wait for CDP to come up.
-  const readyDeadline = Date.now() + 15_000;
+  const readyTimeoutMs = (() => {
+    const raw = process.env.OPENCLAW_BROWSER_CDP_READY_TIMEOUT_MS;
+    if (!raw) return 15_000;
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 15_000;
+    return parsed;
+  })();
+  const readyDeadline = Date.now() + readyTimeoutMs;
   while (Date.now() < readyDeadline) {
     if (await isChromeReachable(profile.cdpUrl, 500)) {
       break;
@@ -300,8 +337,14 @@ export async function launchOpenClawChrome(
     } catch {
       // ignore
     }
+    const suffixParts: string[] = [];
+    if (proc.exitCode != null) suffixParts.push(`exitCode=${proc.exitCode}`);
+    if (proc.signalCode) suffixParts.push(`signal=${proc.signalCode}`);
+    if (stderr.trim()) suffixParts.push(`stderr:\n${stderr.trim()}`);
+    if (!stderr.trim() && stdout.trim()) suffixParts.push(`stdout:\n${stdout.trim()}`);
+    const suffix = suffixParts.length > 0 ? `\n\n${suffixParts.join("\n\n")}` : "";
     throw new Error(
-      `Failed to start Chrome CDP on port ${profile.cdpPort} for profile "${profile.name}".`,
+      `Failed to start Chrome CDP on port ${profile.cdpPort} for profile "${profile.name}" (waited ${readyTimeoutMs}ms).${suffix}`,
     );
   }
 

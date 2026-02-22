@@ -1,5 +1,13 @@
 import { fetchBrowserJson } from "./client-fetch.js";
 
+function resolveTimeoutFromEnv(key: string, fallbackMs: number): number {
+  const raw = process.env[key];
+  if (!raw) return fallbackMs;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return fallbackMs;
+  return n;
+}
+
 export type BrowserStatus = {
   enabled: boolean;
   profile?: string;
@@ -122,7 +130,7 @@ export async function browserStart(baseUrl?: string, opts?: { profile?: string }
   const q = buildProfileQuery(opts?.profile);
   await fetchBrowserJson(withBaseUrl(baseUrl, `/start${q}`), {
     method: "POST",
-    timeoutMs: 15000,
+    timeoutMs: resolveTimeoutFromEnv("OPENCLAW_BROWSER_START_TIMEOUT_MS", 15000),
   });
 }
 
@@ -223,7 +231,7 @@ export async function browserOpenTab(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),
-    timeoutMs: 15000,
+    timeoutMs: resolveTimeoutFromEnv("OPENCLAW_BROWSER_OPEN_TIMEOUT_MS", 15000),
   });
 }
 

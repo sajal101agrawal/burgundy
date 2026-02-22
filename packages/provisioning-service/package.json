@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "@concierge/config": "workspace:*",
+    "@concierge/db": "workspace:*",
     "@concierge/logger": "workspace:*",
     "@concierge/queue": "workspace:*",
-    "@concierge/types": "workspace:*"
+    "@concierge/types": "workspace:*",
+    "drizzle-orm": "^0.36.4"
   }
 }

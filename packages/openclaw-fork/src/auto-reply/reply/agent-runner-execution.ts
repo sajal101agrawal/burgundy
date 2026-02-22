@@ -287,6 +287,10 @@ export async function runAgentTurnWithFallback(params: {
             groupSpace: params.sessionCtx.GroupSpace?.trim() ?? undefined,
             ...senderContext,
             ...runBaseParams,
+            // Platform default: avoid exposing the generic `message` tool to agents.
+            // It routes through the gateway client and can trigger device pairing requirements.
+            // WhatsApp replies should be delivered via the normal auto-reply channel path instead.
+            disableMessageTool: process.env.OPENCLAW_PLATFORM_DISABLE_MESSAGE_TOOL === "1",
             prompt: params.commandBody,
             extraSystemPrompt: params.followupRun.run.extraSystemPrompt,
             toolResultFormat: (() => {

@@ -13,6 +13,9 @@ export default function Page() {
           <a className="cta" href="/register">
             Start onboarding
           </a>
+          <a className="cta secondary" href="/settings">
+            Setup keys + WhatsApp
+          </a>
           <a className="cta secondary" href="/dashboard">
             View dashboard
           </a>

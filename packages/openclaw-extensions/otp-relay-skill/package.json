@@ -10,6 +10,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "openclaw": {
-    "extensions": ["dist/index.js"]
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "devDependencies": {
+    "openclaw": "workspace:*",
+    "@sinclair/typebox": "0.34.48"
   }
 }

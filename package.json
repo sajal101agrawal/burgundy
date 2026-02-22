@@ -6,12 +6,17 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck",
+    "dev:up": "./scripts/dev-up.sh",
+    "lint": "turbo run lint --filter=!openclaw --filter=!openclaw-control-ui",
+    "lint:upstream": "turbo run lint --filter=openclaw --filter=openclaw-control-ui",
+    "typecheck": "turbo run typecheck --filter=!openclaw --filter=!openclaw-control-ui",
+    "typecheck:upstream": "turbo run typecheck --filter=openclaw --filter=openclaw-control-ui",
+    "smoke": "./scripts/smoke.sh",
     "db:migrate": "pnpm --filter @concierge/db migrate",
     "db:generate": "pnpm --filter @concierge/db generate"
   },
   "devDependencies": {
+    "@types/node": "^22.13.4",
     "turbo": "^2.0.5",
     "typescript": "^5.5.4"
   }

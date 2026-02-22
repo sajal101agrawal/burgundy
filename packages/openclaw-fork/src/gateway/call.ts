@@ -21,7 +21,7 @@ import {
   resolveLeastPrivilegeOperatorScopesForMethod,
   type OperatorScope,
 } from "./method-scopes.js";
-import { isSecureWebSocketUrl, pickPrimaryLanIPv4 } from "./net.js";
+import { isPrivateOrLoopbackAddress, isSecureWebSocketUrl, pickPrimaryLanIPv4 } from "./net.js";
 import { PROTOCOL_VERSION } from "./protocol/index.js";
 
 type CallGatewayBaseOptions = {
@@ -156,6 +156,31 @@ export function buildGatewayConnectionDetails(
   // This applies to the FINAL resolved URL, regardless of source (config, CLI override, etc).
   // Both credentials and chat/conversation data must not be transmitted over plaintext to remote hosts.
   if (!isSecureWebSocketUrl(url)) {
+    // Dev escape hatch: allow plaintext ws:// inside private networks (e.g., Docker bridge)
+    // when explicitly opted-in. This should NOT be used in production.
+    const allowInsecure =
+      process.env.OPENCLAW_ALLOW_INSECURE_LAN_WS?.trim() === "1" ||
+      process.env.OPENCLAW_ALLOW_INSECURE_LAN_WS?.trim().toLowerCase() === "true";
+    if (allowInsecure) {
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol === "ws:" && isPrivateOrLoopbackAddress(parsed.hostname)) {
+          // Allowed in dev mode.
+        } else {
+          throw new Error("not_private_ws");
+        }
+      } catch {
+        throw new Error(
+          [
+            `SECURITY ERROR: Gateway URL "${url}" uses plaintext ws:// to a non-loopback address.`,
+            "Both credentials and chat data would be exposed to network interception.",
+            `Source: ${urlSource}`,
+            `Config: ${configPath}`,
+            "Fix: Use wss:// for the gateway URL, or connect via SSH tunnel to localhost.",
+          ].join("\n"),
+        );
+      }
+    } else {
     throw new Error(
       [
         `SECURITY ERROR: Gateway URL "${url}" uses plaintext ws:// to a non-loopback address.`,
@@ -165,6 +190,7 @@ export function buildGatewayConnectionDetails(
         "Fix: Use wss:// for the gateway URL, or connect via SSH tunnel to localhost.",
       ].join("\n"),
     );
+    }
   }
 
   const message = [

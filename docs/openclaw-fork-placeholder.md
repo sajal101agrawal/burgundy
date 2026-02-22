@@ -1,17 +1,13 @@
 # OpenClaw Fork
 
-This directory is reserved for the OpenClaw git subtree.
+OpenClaw is already vendored into this repository at:
 
-To add the subtree:
+- `packages/openclaw-fork/`
 
-```
-git subtree add --prefix packages/openclaw-fork https://github.com/openclaw/openclaw main --squash
-```
+Platform-specific integration notes live here:
 
-After adding the subtree, apply the platform modifications described in the technical spec:
+- `docs/OPENCLAW.md`
 
-- `src/auto-reply/reply.ts` pending listener + interrupt classifier hook
-- `src/config/zod-schema.ts` support `OPENCLAW_CONFIG_JSON`
-- WhatsApp adapter internal HTTP endpoint for pre-routed messages
-- `src/cli/commands/gateway.ts` respect `OPENCLAW_WORKSPACE`
-- `pnpm-workspace.yaml` include `/skills/*`
+If you’re looking for upstream OpenClaw docs:
+
+- `packages/openclaw-fork/README.md`

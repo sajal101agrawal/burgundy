@@ -1,9 +1,10 @@
 import { classifyInterrupt } from "@concierge/interrupt-classifier";
 import type { InterruptClassification } from "@concierge/types";
-import type { RoutingContext } from "./context";
-import { createInMemoryRoutingContext } from "./context";
+import type { RoutingContext } from "./context.js";
+import { createDbRoutingContext, createInMemoryRoutingContext } from "./context.js";
 
-export type { RoutingContext, ActiveTask, RoutedMessage } from "./context";
+export type { RoutingContext, ActiveTask, RoutedMessage, RegisteredUser } from "./context.js";
+export { createDbRoutingContext, createInMemoryRoutingContext } from "./context.js";
 
 export interface InboundMessage {
   from: string;
@@ -41,7 +42,8 @@ export const handleInbound = async (
     classification = result.classification;
   }
 
-  await context.dispatchToAgent({
+  // Fire-and-forget: WhatsApp webhooks should return quickly. Dispatch runs with retries.
+  void context.dispatchToAgent({
     userId,
     from: message.from,
     body: message.body,

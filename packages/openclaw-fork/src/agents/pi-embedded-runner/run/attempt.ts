@@ -482,7 +482,7 @@ export async function runEmbeddedAttempt(
       tools,
     });
     const systemPromptOverride = createSystemPromptOverride(appendPrompt);
-    const systemPromptText = systemPromptOverride();
+    let systemPromptText = systemPromptOverride();
 
     const sessionLock = await acquireSessionWriteLock({
       sessionFile: params.sessionFile,
@@ -922,6 +922,18 @@ export async function runEmbeddedAttempt(
             .join("\n\n"),
         };
         {
+          if (hookResult?.systemPrompt && hookResult.systemPrompt.trim()) {
+            // OpenClaw upstream defines systemPrompt in the hook result, but (in embedded runner)
+            // it was not applied. We intentionally *append* hook system prompt text so plugins
+            // can add platform directives without clobbering the base system prompt.
+            systemPromptText = `${systemPromptText}\n\n${hookResult.systemPrompt.trim()}\n`;
+            if (session) {
+              applySystemPromptOverrideToSession(session, systemPromptText);
+            }
+            log.debug(
+              `hooks: appended systemPrompt (${hookResult.systemPrompt.trim().length} chars)`,
+            );
+          }
           if (hookResult?.prependContext) {
             effectivePrompt = `${hookResult.prependContext}\n\n${params.prompt}`;
             log.debug(

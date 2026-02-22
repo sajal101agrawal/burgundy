@@ -120,8 +120,9 @@ export async function monitorWebChannel(
   const internalPath =
     process.env.OPENCLAW_WHATSAPP_INTERNAL_PATH?.trim() || "/internal/whatsapp/inbound";
   const internalToken = process.env.OPENCLAW_WHATSAPP_INTERNAL_TOKEN?.trim();
+  const internalAlwaysOn = process.env.OPENCLAW_WHATSAPP_INTERNAL_ALWAYS_ON === "1";
   const internalServer =
-    internalPort && Number.isFinite(internalPort) && internalPort > 0
+    !internalAlwaysOn && internalPort && Number.isFinite(internalPort) && internalPort > 0
       ? await startInternalWebInboundServer({
           port: internalPort,
           host: internalHost,

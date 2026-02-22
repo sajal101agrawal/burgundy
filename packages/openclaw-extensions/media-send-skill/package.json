@@ -1,0 +1,22 @@
+{
+  "name": "@concierge/media-send-skill",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "openclaw": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "devDependencies": {
+    "@sinclair/typebox": "0.34.48",
+    "openclaw": "workspace:*"
+  }
+}
+

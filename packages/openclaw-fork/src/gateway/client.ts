@@ -21,7 +21,7 @@ import {
   type GatewayClientName,
 } from "../utils/message-channel.js";
 import { buildDeviceAuthPayload } from "./device-auth.js";
-import { isSecureWebSocketUrl } from "./net.js";
+import { isPrivateOrLoopbackAddress, isSecureWebSocketUrl } from "./net.js";
 import {
   type ConnectParams,
   type EventFrame,
@@ -115,6 +115,22 @@ export class GatewayClient {
     // This protects both credentials AND chat/conversation data from MITM attacks.
     // Device tokens may be loaded later in sendConnect(), so we block regardless of hasCredentials.
     if (!isSecureWebSocketUrl(url)) {
+      // Dev escape hatch: allow plaintext ws:// inside private networks (e.g., Docker bridge)
+      // when explicitly opted-in. This should NOT be used in production.
+      const allowInsecureFlag =
+        process.env.OPENCLAW_ALLOW_INSECURE_LAN_WS?.trim() === "1" ||
+        process.env.OPENCLAW_ALLOW_INSECURE_LAN_WS?.trim().toLowerCase() === "true";
+      const allowInsecureWs = (() => {
+        if (!allowInsecureFlag) {
+          return false;
+        }
+        try {
+          const parsed = new URL(url);
+          return parsed.protocol === "ws:" && isPrivateOrLoopbackAddress(parsed.hostname);
+        } catch {
+          return false;
+        }
+      })();
       // Safe hostname extraction - avoid throwing on malformed URLs in error path
       let displayHost = url;
       try {
@@ -127,8 +143,11 @@ export class GatewayClient {
           "Both credentials and chat data would be exposed to network interception. " +
           "Use wss:// for the gateway URL, or connect via SSH tunnel to localhost.",
       );
-      this.opts.onConnectError?.(error);
-      return;
+      // If explicitly allowed and private, proceed; otherwise block.
+      if (!allowInsecureWs) {
+        this.opts.onConnectError?.(error);
+        return;
+      }
     }
     // Allow node screen snapshots and other large responses.
     const wsOptions: ClientOptions = {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-API_URL=${API_URL:-"http://localhost:3000"}
+API_URL=${API_URL:-"http://localhost:3005"}
 FROM_NUMBER=${FROM_NUMBER:-"+15551234567"}
 BODY=${BODY:-"hello from local dev"}
 

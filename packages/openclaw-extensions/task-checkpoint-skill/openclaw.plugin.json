@@ -1,0 +1,12 @@
+{
+  "id": "task-checkpoint-skill",
+  "name": "Task Checkpoint Skill",
+  "description": "Persist and restore task checkpoints via the platform API.",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
+

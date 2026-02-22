@@ -1,0 +1,12 @@
+{
+  "id": "intent-router-skill",
+  "name": "Intent Router Skill",
+  "description": "Injects platform directives into the prompt (order flows, media flows) so the agent reliably uses tools instead of refusing.",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
+

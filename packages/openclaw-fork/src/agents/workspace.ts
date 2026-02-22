@@ -13,7 +13,7 @@ export function resolveDefaultAgentWorkspaceDir(
 ): string {
   const override = env.OPENCLAW_WORKSPACE?.trim();
   if (override) {
-    return resolveUserPath(override, env, homedir);
+    return resolveUserPath(override);
   }
   const home = resolveRequiredHomeDir(env, homedir);
   const profile = env.OPENCLAW_PROFILE?.trim();

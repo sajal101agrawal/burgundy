@@ -1,0 +1,12 @@
+{
+  "id": "media-send-skill",
+  "name": "Media Send Skill",
+  "description": "Download remote media (e.g. stock photos) and send it via WhatsApp.",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
+

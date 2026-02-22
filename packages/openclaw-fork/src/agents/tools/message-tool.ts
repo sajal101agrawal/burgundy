@@ -1,3 +1,4 @@
+import path from "node:path";
 import { Type } from "@sinclair/typebox";
 import { BLUEBUBBLES_GROUP_ACTIONS } from "../../channels/plugins/bluebubbles-actions.js";
 import {
@@ -19,6 +20,7 @@ import { normalizeTargetForProvider } from "../../infra/outbound/target-normaliz
 import { normalizeAccountId } from "../../routing/session-key.js";
 import { stripReasoningTagsFromText } from "../../shared/text/reasoning-tags.js";
 import { normalizeMessageChannel } from "../../utils/message-channel.js";
+import { sendMessageWhatsApp } from "../../web/outbound.js";
 import { resolveSessionAgentId } from "../agent-scope.js";
 import { listChannelSupportedActions } from "../channel-tools.js";
 import { channelTargetSchema, channelTargetsSchema, stringEnum } from "../schema/typebox.js";
@@ -618,6 +620,59 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
       const accountId = readStringParam(params, "accountId") ?? agentAccountId;
       if (accountId) {
         params.accountId = accountId;
+      }
+
+      // Platform-friendly fast path: when we're already running inside a WhatsApp auto-reply
+      // session, we can deliver messages directly via the active WhatsApp listener instead of
+      // routing through the gateway client (which can require device pairing for write scopes).
+      //
+      // If this fails (e.g. no active listener), we fall back to the generic gateway-based path.
+      const channel = normalizeMessageChannel(
+        readStringParam(params, "channel") ?? options?.currentChannelProvider,
+      );
+      if (
+        channel === "whatsapp" &&
+        (action === "send" || action === "sendWithEffect" || action === "sendAttachment")
+      ) {
+        const rawTo =
+          readStringParam(params, "to") ??
+          readStringParam(params, "target") ??
+          (Array.isArray(params.targets)
+            ? (params.targets.find((v) => typeof v === "string" && v.trim()) as string | undefined)
+            : undefined);
+        const to = normalizeTargetForProvider("whatsapp", rawTo);
+        const message =
+          readStringParam(params, "caption") ??
+          readStringParam(params, "message") ??
+          readStringParam(params, "text") ??
+          "";
+        const mediaUrl =
+          readStringParam(params, "media") ??
+          readStringParam(params, "path") ??
+          readStringParam(params, "filePath");
+        const gifPlayback = (typeof params.gifPlayback === "boolean" ? params.gifPlayback : undefined) ?? false;
+        if (to) {
+          try {
+            const mediaLocalRoots =
+              mediaUrl && (mediaUrl.startsWith("/") || mediaUrl.startsWith("."))
+                ? [path.dirname(mediaUrl)]
+                : undefined;
+            const result = await sendMessageWhatsApp(to, message, {
+              verbose: false,
+              ...(mediaUrl ? { mediaUrl } : {}),
+              ...(mediaLocalRoots ? { mediaLocalRoots } : {}),
+              ...(gifPlayback ? { gifPlayback: true } : {}),
+              ...(accountId ? { accountId } : {}),
+            });
+            return jsonResult({
+              status: "ok",
+              messageId: result.messageId,
+              to: result.toJid,
+            });
+          } catch {
+            // Fall through to the generic gateway-based delivery path.
+          }
+        }
       }
 
       const gatewayResolved = resolveGatewayOptions({

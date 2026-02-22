@@ -1,0 +1,12 @@
+{
+  "id": "stuck-handler-skill",
+  "name": "Stuck Handler Skill",
+  "description": "Escalate when browser automation is stuck by asking the user for help (dev-grade stub).",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
+

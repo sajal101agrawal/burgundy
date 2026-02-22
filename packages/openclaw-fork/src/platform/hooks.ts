@@ -51,7 +51,7 @@ async function resolveHooks(): Promise<PlatformHooks | null> {
           const payload = (await response.json().catch(() => null)) as { handled?: boolean } | null;
           return Boolean(payload?.handled);
         } catch (error) {
-          hookLogger.warn({ error: String(error) }, "platform API pending listener failed");
+          hookLogger.warn("platform API pending listener failed", { error: String(error) });
           return false;
         }
       },
@@ -73,7 +73,7 @@ async function resolveHooks(): Promise<PlatformHooks | null> {
             | null;
           return typeof payload?.classification === "string" ? payload?.classification : undefined;
         } catch (error) {
-          hookLogger.warn({ error: String(error) }, "platform API interrupt classify failed");
+          hookLogger.warn("platform API interrupt classify failed", { error: String(error) });
           return undefined;
         }
       },
@@ -86,10 +86,10 @@ async function resolveHooks(): Promise<PlatformHooks | null> {
   moduleAttempted = true;
   try {
     const mod = (await import(modulePath)) as { default?: PlatformHooks } & PlatformHooks;
-    cachedModule = (mod.default ?? mod) as PlatformHooks;
+    cachedModule = mod.default ?? mod;
     return cachedModule;
   } catch (error) {
-    hookLogger.warn({ error: String(error) }, "platform hooks load failed");
+    hookLogger.warn("platform hooks load failed", { error: String(error) });
     cachedModule = null;
     return null;
   }
@@ -112,7 +112,7 @@ export async function checkPendingListener(params: {
       return Boolean(result.handled);
     }
   } catch (error) {
-    hookLogger.warn({ error: String(error) }, "pending listener hook failed");
+    hookLogger.warn("pending listener hook failed", { error: String(error) });
   }
   return false;
 }
@@ -135,7 +135,7 @@ export async function classifyInterrupt(params: {
       return typeof classification === "string" ? classification : undefined;
     }
   } catch (error) {
-    hookLogger.warn({ error: String(error) }, "interrupt classifier hook failed");
+    hookLogger.warn("interrupt classifier hook failed", { error: String(error) });
   }
   return undefined;
 }

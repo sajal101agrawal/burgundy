@@ -1,0 +1,12 @@
+{
+  "id": "otp-relay-skill",
+  "name": "OTP Relay Skill",
+  "description": "Pause a task, ask the user for an OTP over WhatsApp via the platform API, then resume.",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
+

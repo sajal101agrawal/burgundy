@@ -1,0 +1,12 @@
+{
+  "id": "screenshot-send-skill",
+  "name": "Screenshot Send Skill",
+  "description": "Capture screenshots and send them back to the user (dev-grade implementation).",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
+

@@ -10,9 +10,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@concierge/db": "workspace:*",
     "@concierge/logger": "workspace:*",
     "@concierge/types": "workspace:*",
     "@concierge/interrupt-classifier": "workspace:*",
-    "@concierge/proactive-messaging": "workspace:*"
+    "@concierge/proactive-messaging": "workspace:*",
+    "drizzle-orm": "^0.36.4"
   }
 }

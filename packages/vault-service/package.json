@@ -11,8 +11,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@concierge/db": "workspace:*",
     "@concierge/logger": "workspace:*",
     "@concierge/types": "workspace:*",
+    "drizzle-orm": "^0.36.4",
     "fastify": "^4.28.1"
   }
 }

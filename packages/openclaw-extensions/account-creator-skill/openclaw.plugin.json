@@ -1,0 +1,12 @@
+{
+  "id": "account-creator-skill",
+  "name": "Account Creator Skill",
+  "description": "Register/login automation helpers; includes OTP handling via the platform user.ask primitive.",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
+

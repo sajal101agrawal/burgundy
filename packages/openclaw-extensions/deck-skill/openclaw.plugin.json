@@ -1,0 +1,12 @@
+{
+  "id": "deck-skill",
+  "name": "Deck Skill",
+  "description": "Generate a PPTX and send it via WhatsApp.",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
+

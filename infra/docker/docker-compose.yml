@@ -1,23 +1,36 @@
-version: "3.9"
-
 services:
   api:
     image: node:22-alpine
     working_dir: /app
-    command: sh -c "corepack enable && pnpm install && pnpm --filter @concierge/api build && node apps/api/dist/index.js"
+    command: sh -c "corepack enable && pnpm --filter @concierge/api... install --frozen-lockfile && pnpm --filter @concierge/api... build && node apps/api/dist/index.js"
+    env_file:
+      - .env
     volumes:
       - ../../:/app
+      # Prevent container installs from polluting the host workspace (pnpm store paths are absolute).
+      - /app/node_modules
+      - /app/.pnpm-store
+      - /app/.turbo
+      - openclaw-workspace:/openclaw-workspace
     environment:
       - PORT=3000
       - JWT_SECRET=dev-secret
-      - OPENCLAW_INTERNAL_BASE_URL=http://openclaw:18800
+      - PLATFORM_INTERNAL_TOKEN=dev-internal-token
+      - OPENCLAW_INTERNAL_BASE_URL=http://openclaw:18810
+      - OPENCLAW_GATEWAY_URL=ws://openclaw:18789
+      - OPENCLAW_GATEWAY_TOKEN=dev-gateway-token
+      - OPENCLAW_WHATSAPP_OUTBOUND_PATH=/internal/whatsapp/send
+      - OPENCLAW_STATE_DIR=/openclaw-workspace/state
+      - OPENCLAW_PRIMARY_AGENT_ID=main
       - WHATSAPP_ACCOUNT_ID=default
       - REDIS_URL=redis://redis:6379
-      - DEV_USER_PHONE=${DEV_USER_PHONE}
-      - DEV_USER_ID=${DEV_USER_ID}
-      - DEV_INSTANCE_ENDPOINT=${DEV_INSTANCE_ENDPOINT}
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/concierge
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DEV_USER_PHONE=${DEV_USER_PHONE:-+15550001111}
+      - DEV_USER_ID=${DEV_USER_ID:-00000000-0000-0000-0000-000000000001}
+      - DEV_INSTANCE_ENDPOINT=${DEV_INSTANCE_ENDPOINT:-http://openclaw:18810}
     ports:
-      - "3000:3000"
+      - "3005:3000"
     depends_on:
       - postgres
       - redis
@@ -25,21 +38,32 @@ services:
   worker:
     image: node:22-alpine
     working_dir: /app
-    command: sh -c "corepack enable && pnpm install && pnpm --filter @concierge/worker build && node apps/worker/dist/index.js"
+    command: sh -c "corepack enable && pnpm --filter @concierge/worker... install --frozen-lockfile && pnpm --filter @concierge/worker... build && node apps/worker/dist/index.js"
+    env_file:
+      - .env
     volumes:
       - ../../:/app
+      - /app/node_modules
+      - /app/.pnpm-store
+      - /app/.turbo
     environment:
       - REDIS_URL=redis://redis:6379
       - PLATFORM_API_URL=http://api:3000
+      - PLATFORM_INTERNAL_TOKEN=dev-internal-token
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/concierge
     depends_on:
       - redis
+      - postgres
 
   web:
     image: node:22-alpine
     working_dir: /app
-    command: sh -c "corepack enable && pnpm install && pnpm --filter @concierge/web dev -- --hostname 0.0.0.0 --port 3001"
+    command: sh -c "rm -rf apps/web/.next && corepack enable && pnpm --filter @concierge/web... install --frozen-lockfile && pnpm --filter @concierge/web exec next dev --hostname 0.0.0.0 --port 3001"
     volumes:
       - ../../:/app
+      - /app/node_modules
+      - /app/.pnpm-store
+      - /app/.turbo
     environment:
       - PORT=3001
     ports:
@@ -48,13 +72,54 @@ services:
   vault:
     image: node:22-alpine
     working_dir: /app
-    command: sh -c "corepack enable && pnpm install && pnpm --filter @concierge/vault-service build && node packages/vault-service/dist/index.js"
+    command: sh -c "corepack enable && pnpm --filter @concierge/vault-service... install --frozen-lockfile && pnpm --filter @concierge/vault-service... build && node packages/vault-service/dist/index.js"
+    env_file:
+      - .env
     volumes:
       - ../../:/app
+      - /app/node_modules
+      - /app/.pnpm-store
+      - /app/.turbo
     environment:
       - PORT=3002
+      - VAULT_MASTER_KEY=dev-master-key
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/concierge
     ports:
       - "3002:3002"
+
+  memory:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm --filter @concierge/memory-service... install --frozen-lockfile && pnpm --filter @concierge/memory-service... build && node packages/memory-service/dist/index.js"
+    volumes:
+      - ../../:/app
+      - /app/node_modules
+      - /app/.pnpm-store
+      - /app/.turbo
+    environment:
+      - PORT=3003
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/concierge
+    ports:
+      - "3003:3003"
+    depends_on:
+      - postgres
+
+  email:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm --filter @concierge/email-service... install --frozen-lockfile && pnpm --filter @concierge/email-service... build && node packages/email-service/dist/index.js"
+    volumes:
+      - ../../:/app
+      - /app/node_modules
+      - /app/.pnpm-store
+      - /app/.turbo
+    environment:
+      - PORT=3004
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - "3004:3004"
+    depends_on:
+      - redis
 
   postgres:
     image: pgvector/pgvector:pg16
@@ -74,19 +139,52 @@ services:
     build:
       context: ../../
       dockerfile: infra/docker/openclaw-agent/Dockerfile
+    env_file:
+      - .env
     environment:
       - OPENCLAW_WORKSPACE=/workspace
-      - OPENCLAW_AGENT_ID=dev-user
-      - OPENCLAW_CONFIG_JSON={"gateway":{"mode":"local"},"channels":{"whatsapp":{"allowFrom":["*"]}}}
+      - OPENCLAW_STATE_DIR=/workspace/state
+      - OPENCLAW_CONFIG_PATH=/workspace/state/openclaw.platform.json
+      # In Docker, respawning a new PID and exiting kills the container.
+      # Force in-process restarts on config reloads and /restart.
+      - OPENCLAW_NO_RESPAWN=1
       - PLATFORM_API_URL=http://api:3000
-      - OPENCLAW_WHATSAPP_INTERNAL_PORT=18800
+      - PLATFORM_INTERNAL_TOKEN=dev-internal-token
+      - VAULT_SERVICE_URL=http://vault:3002
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # Keep this distinct from the browser CDP port (defaults to 18800).
+      - OPENCLAW_WHATSAPP_INTERNAL_PORT=18810
       - OPENCLAW_WHATSAPP_INTERNAL_HOST=0.0.0.0
       - OPENCLAW_WHATSAPP_INTERNAL_PATH=/internal/whatsapp/inbound
+      - OPENCLAW_WHATSAPP_OUTBOUND_PATH=/internal/whatsapp/send
+      - OPENCLAW_WHATSAPP_INTERNAL_ACCOUNT_ID=default
+      - OPENCLAW_WHATSAPP_INTERNAL_ALWAYS_ON=1
+      # Dev-only: allow internal ws:// gateway calls on the Docker bridge network.
+      - OPENCLAW_ALLOW_INSECURE_LAN_WS=1
+      # Platform default: hide OpenClaw's generic `message` tool from the agent to avoid
+      # gateway device-pairing requirements and keep WhatsApp delivery on the native path.
+      - OPENCLAW_PLATFORM_DISABLE_MESSAGE_TOOL=1
+      # Chromium cold-start in Docker can exceed 15s; avoid false "browser unavailable" errors.
+      - OPENCLAW_BROWSER_START_TIMEOUT_MS=120000
+      - OPENCLAW_BROWSER_OPEN_TIMEOUT_MS=120000
+      - OPENCLAW_BROWSER_CDP_READY_TIMEOUT_MS=60000
     ports:
       - "18789:18789"
-      - "18800:18800"
+      - "18810:18810"
     volumes:
       - openclaw-workspace:/workspace
+      # Dev convenience: hot-reload platform skills without clobbering upstream OpenClaw extensions.
+      - ../../packages/openclaw-extensions/account-creator-skill:/app/extensions/account-creator-skill:ro
+      - ../../packages/openclaw-extensions/deck-skill:/app/extensions/deck-skill:ro
+      - ../../packages/openclaw-extensions/deployment-skill:/app/extensions/deployment-skill:ro
+      - ../../packages/openclaw-extensions/intent-router-skill:/app/extensions/intent-router-skill:ro
+      - ../../packages/openclaw-extensions/media-send-skill:/app/extensions/media-send-skill:ro
+      - ../../packages/openclaw-extensions/otp-relay-skill:/app/extensions/otp-relay-skill:ro
+      - ../../packages/openclaw-extensions/platform-userid-injector:/app/extensions/platform-userid-injector:ro
+      - ../../packages/openclaw-extensions/screenshot-send-skill:/app/extensions/screenshot-send-skill:ro
+      - ../../packages/openclaw-extensions/stuck-handler-skill:/app/extensions/stuck-handler-skill:ro
+      - ../../packages/openclaw-extensions/task-checkpoint-skill:/app/extensions/task-checkpoint-skill:ro
+      - ../../packages/openclaw-extensions/vault-skill:/app/extensions/vault-skill:ro
 
 volumes:
   openclaw-workspace:

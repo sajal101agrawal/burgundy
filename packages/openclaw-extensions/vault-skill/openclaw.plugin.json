@@ -1,0 +1,12 @@
+{
+  "id": "vault-skill",
+  "name": "Vault Skill",
+  "description": "HTTP client tools for the platform vault-service (vault_get, vault_set, vault_share, vault_list).",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
+

@@ -530,7 +530,7 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
     try {
       maybeLoadDotEnvForConfig(deps.env);
       const envConfigRaw = deps.env.OPENCLAW_CONFIG_JSON?.trim();
-      let envConfigResolved: unknown | null = null;
+      let envConfigResolved: unknown = null;
       if (envConfigRaw) {
         try {
           const parsedEnv = deps.json5.parse(envConfigRaw);

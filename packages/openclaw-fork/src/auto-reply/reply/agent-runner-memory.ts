@@ -116,6 +116,7 @@ export async function runMemoryFlushIfNeeded(params: {
           ...embeddedContext,
           ...senderContext,
           ...runBaseParams,
+          disableMessageTool: process.env.OPENCLAW_PLATFORM_DISABLE_MESSAGE_TOOL === "1",
           prompt: resolveMemoryFlushPromptForRun({
             prompt: memoryFlushSettings.prompt,
             cfg: params.cfg,

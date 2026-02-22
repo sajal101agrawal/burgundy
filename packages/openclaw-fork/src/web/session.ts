@@ -184,7 +184,10 @@ export async function waitForWaConnection(sock: ReturnType<typeof makeWASocket>)
 }
 
 export function getStatusCode(err: unknown) {
+  // Baileys/boom errors are often nested like:
+  // { error: { output: { statusCode } } } or { output: { statusCode } }.
   return (
+    (err as { error?: { output?: { statusCode?: number } } })?.error?.output?.statusCode ??
     (err as { output?: { statusCode?: number } })?.output?.statusCode ??
     (err as { status?: number })?.status
   );

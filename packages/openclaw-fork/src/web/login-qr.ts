@@ -31,11 +31,12 @@ type ActiveLogin = {
   error?: string;
   errorStatus?: number;
   waitPromise: Promise<void>;
-  restartAttempted: boolean;
+  restartAttempts: number;
   verbose: boolean;
 };
 
 const ACTIVE_LOGIN_TTL_MS = 3 * 60_000;
+const MAX_LOGIN_RESTARTS = 3;
 const activeLogins = new Map<string, ActiveLogin>();
 
 function closeSocket(sock: WaSocket) {
@@ -80,12 +81,14 @@ function attachLoginWaiter(accountId: string, login: ActiveLogin) {
 }
 
 async function restartLoginSocket(login: ActiveLogin, runtime: RuntimeEnv) {
-  if (login.restartAttempted) {
+  if (login.restartAttempts >= MAX_LOGIN_RESTARTS) {
     return false;
   }
-  login.restartAttempted = true;
+  login.restartAttempts += 1;
   runtime.log(
-    info("WhatsApp asked for a restart after pairing (code 515); retrying connection once…"),
+    info(
+      `WhatsApp asked for a restart after pairing (code 515); retrying connection (${login.restartAttempts}/${MAX_LOGIN_RESTARTS})…`,
+    ),
   );
   closeSocket(login.sock);
   try {
@@ -124,6 +127,19 @@ export async function startWebLoginWithQr(
     return {
       message: `WhatsApp is already linked (${who}). Say “relink” if you want a fresh QR.`,
     };
+  }
+  if (opts.force) {
+    // Baileys can get stuck without emitting a new QR if the cached session is logged out/corrupted.
+    // Force relink clears the web auth dir first so we reliably get a fresh QR.
+    try {
+      await logoutWeb({
+        authDir: account.authDir,
+        isLegacyAuthDir: account.isLegacyAuthDir,
+        runtime,
+      });
+    } catch {
+      // Best-effort: if cleanup fails, still attempt to create a socket and wait for QR.
+    }
   }
 
   const existing = activeLogins.get(account.accountId);
@@ -185,7 +201,7 @@ export async function startWebLoginWithQr(
     startedAt: Date.now(),
     connected: false,
     waitPromise: Promise.resolve(),
-    restartAttempted: false,
+    restartAttempts: 0,
     verbose: Boolean(opts.verbose),
   };
   activeLogins.set(account.accountId, login);
@@ -277,7 +293,10 @@ export async function waitForWebLogin(
           continue;
         }
       }
-      const message = `WhatsApp login failed: ${login.error}`;
+      const message =
+        login.errorStatus === 515
+          ? `WhatsApp login failed: ${login.error}. Please generate a new QR and try again.`
+          : `WhatsApp login failed: ${login.error}`;
       await resetActiveLogin(account.accountId, message);
       runtime.log(danger(message));
       return { connected: false, message };

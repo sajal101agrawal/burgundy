@@ -81,6 +81,8 @@ import { startGatewaySidecars } from "./server-startup.js";
 import { startGatewayTailscaleExposure } from "./server-tailscale.js";
 import { createWizardSessionTracker } from "./server-wizard-sessions.js";
 import { attachGatewayWsHandlers } from "./server-ws-runtime.js";
+import { resolveDefaultWhatsAppAccountId } from "../web/accounts.js";
+import { startInternalWebInboundServer } from "../web/inbound.js";
 import {
   getHealthCache,
   getHealthVersion,
@@ -262,6 +264,32 @@ export async function startGatewayServer(
     () => getTotalQueueSize() + getTotalPendingReplies() + getActiveEmbeddedRunCount(),
   );
   initSubagentRegistry();
+  let internalInboundServer: Awaited<ReturnType<typeof startInternalWebInboundServer>> | null = null;
+  const internalPortRaw = process.env.OPENCLAW_WHATSAPP_INTERNAL_PORT?.trim();
+  const internalPort = internalPortRaw ? Number.parseInt(internalPortRaw, 10) : null;
+  if (internalPort && Number.isFinite(internalPort) && internalPort > 0) {
+    const internalHost = process.env.OPENCLAW_WHATSAPP_INTERNAL_HOST?.trim() || "127.0.0.1";
+    const internalPath =
+      process.env.OPENCLAW_WHATSAPP_INTERNAL_PATH?.trim() || "/internal/whatsapp/inbound";
+    const internalToken = process.env.OPENCLAW_WHATSAPP_INTERNAL_TOKEN?.trim();
+    const accountId =
+      process.env.OPENCLAW_WHATSAPP_INTERNAL_ACCOUNT_ID?.trim() ||
+      resolveDefaultWhatsAppAccountId(cfgAtStart);
+    try {
+      internalInboundServer = await startInternalWebInboundServer({
+        port: internalPort,
+        host: internalHost,
+        path: internalPath,
+        token: internalToken,
+        accountId,
+        getHandler: () => null,
+      });
+    } catch (error) {
+      logChannels.warn(
+        `failed to start internal WhatsApp inbound server: ${String(error)}`,
+      );
+    }
+  }
   const defaultAgentId = resolveDefaultAgentId(cfgAtStart);
   const defaultWorkspaceDir = resolveAgentWorkspaceDir(cfgAtStart, defaultAgentId);
   const baseMethods = listGatewayMethods();
@@ -760,6 +788,10 @@ export async function startGatewayServer(
       if (skillsRefreshTimer) {
         clearTimeout(skillsRefreshTimer);
         skillsRefreshTimer = null;
+      }
+      if (internalInboundServer) {
+        internalInboundServer.stop();
+        internalInboundServer = null;
       }
       skillsChangeUnsub();
       authRateLimiter?.dispose();

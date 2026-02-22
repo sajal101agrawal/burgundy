@@ -28,9 +28,23 @@ export type ActiveWebListener = {
   close?: () => Promise<void>;
 };
 
-let _currentListener: ActiveWebListener | null = null;
+// NOTE: OpenClaw is bundled into multiple chunks. In some deployments (including our
+// Docker + internal HTTP ingress), the same module may be loaded more than once,
+// which would otherwise create multiple independent `listeners` maps.
+// Stash the singleton store on globalThis so internal endpoints and the WhatsApp
+// monitor share the same in-memory registry.
+type ActiveWebListenerStore = {
+  listeners: Map<string, ActiveWebListener>;
+  currentListener: ActiveWebListener | null;
+};
 
-const listeners = new Map<string, ActiveWebListener>();
+const STORE_KEY = "__openclaw_active_web_listener_store__";
+const store: ActiveWebListenerStore =
+  ((globalThis as any)[STORE_KEY] as ActiveWebListenerStore | undefined) ??
+  (((globalThis as any)[STORE_KEY] = {
+    listeners: new Map<string, ActiveWebListener>(),
+    currentListener: null,
+  }) as ActiveWebListenerStore);
 
 export function resolveWebAccountId(accountId?: string | null): string {
   return (accountId ?? "").trim() || DEFAULT_ACCOUNT_ID;
@@ -41,7 +55,7 @@ export function requireActiveWebListener(accountId?: string | null): {
   listener: ActiveWebListener;
 } {
   const id = resolveWebAccountId(accountId);
-  const listener = listeners.get(id) ?? null;
+  const listener = store.listeners.get(id) ?? null;
   if (!listener) {
     throw new Error(
       `No active WhatsApp Web listener (account: ${id}). Start the gateway, then link WhatsApp with: ${formatCliCommand(`openclaw channels login --channel whatsapp --account ${id}`)}.`,
@@ -69,16 +83,16 @@ export function setActiveWebListener(
 
   const id = resolveWebAccountId(accountId);
   if (!listener) {
-    listeners.delete(id);
+    store.listeners.delete(id);
   } else {
-    listeners.set(id, listener);
+    store.listeners.set(id, listener);
   }
   if (id === DEFAULT_ACCOUNT_ID) {
-    _currentListener = listener;
+    store.currentListener = listener;
   }
 }
 
 export function getActiveWebListener(accountId?: string | null): ActiveWebListener | null {
   const id = resolveWebAccountId(accountId);
-  return listeners.get(id) ?? null;
+  return store.listeners.get(id) ?? null;
 }
