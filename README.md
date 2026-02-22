@@ -1,82 +1,66 @@
 # AI Concierge Platform
 
-This repository scaffolds the AI Concierge Platform.
+WhatsApp‑native, multi‑tenant AI concierge built on a lightly modified OpenClaw fork. Each user gets their own agent, tools, memory, email, and (dev) WhatsApp pairing.
 
-## Structure
-- `apps/api`: Fastify API gateway
-- `apps/worker`: BullMQ workers
-- `apps/web`: Next.js 14 web UI
-- `packages/openclaw-fork`: OpenClaw fork (git subtree)
-- `packages/openclaw-extensions`: Custom OpenClaw skills
-- `packages/strategy-engine`, `packages/interrupt-classifier`, `packages/proactive-messaging`: core intelligence services
-- `packages/vault-service`, `packages/memory-service`, `packages/email-service`: internal services
-- `packages/shared/*`: shared config, types, db schema, logger, queue names
-- `infra/docker`: Dockerfiles and dev compose
-- `docs/`: platform documentation (start with `docs/LOCAL_DEV.md`)
+## Capabilities (what’s implemented today)
+- WhatsApp channel (Baileys) with internal HTTP ingress for routing
+- Per‑user OpenClaw workspace + persona files (AGENTS/SOUL/USER)
+- Proactive messaging primitive (`user.ask`) + pending listener registry (OTP, confirm, info)
+- Vault service + vault skill (AES‑256‑GCM, per‑user key)
+- OTP relay, stuck handler (temp browser link), checkpointing
+- Strategy engine, interrupt classifier, tool registry (seed)
+- Browser automation with node/host targets; media + screenshot send skills
+- Intent router (orders, presentations, photos) with tool‑first directives
+- Deck generator skill (`deck_send_pptx`) with WhatsApp media send
+- Web UI: registration, settings (Anthropic key, WhatsApp pairing, node pairing), vault, tasks, audit
 
-## Quick start (local)
-1. Install deps: `corepack enable && pnpm install`
-2. Start dev stack (prompts for `ANTHROPIC_API_KEY` if missing):
+## Repository layout
+- `apps/api` — Fastify API gateway & webhooks
+- `apps/worker` — BullMQ workers (provision, send-whatsapp, tool discovery, audit, email actionability)
+- `apps/web` — Next.js 14 Web UI
+- `packages/openclaw-fork` — OpenClaw subtree with platform patches
+- `packages/openclaw-extensions` — platform skills (vault, otp, stuck, checkpoint, deployment, account-creator, media, deck, intent-router, platform-userid injector, screenshot)
+- `packages/strategy-engine`, `packages/interrupt-classifier`, `packages/proactive-messaging`, `packages/tool-registry`
+- `packages/vault-service`, `packages/memory-service`, `packages/email-service`
+- `packages/shared/*` — types, db, logger, queue, config
+- `infra/docker` — dev Dockerfile/compose for API, worker, web, vault, memory, postgres, redis, openclaw agent
+- `docs/` — operational guides (start with `docs/LOCAL_DEV.md`)
 
+## Prereqs
+- Node 22 (corepack enabled), Docker, pnpm
+- Anthropic API key (set via Web UI or env `ANTHROPIC_API_KEY`)
+- Spare WhatsApp number for dev pairing
+
+## Quick start (dev stack)
 ```bash
-./scripts/dev-up.sh
+corepack enable
+pnpm install
+./scripts/dev-up.sh   # builds images, runs docker compose, applies migrations
 ```
 
-### Local URLs
-- Web UI: `http://localhost:3001`
-- API: `http://localhost:3005`
-- Vault service: `http://localhost:3002`
-- Memory service: `http://localhost:3003`
-- Email service: `http://localhost:3004`
+Local URLs
+- Web UI: http://localhost:3001
+- API: http://localhost:3005
+- OpenClaw internal HTTP: http://localhost:18810 (container network)
 
-### Web UI Guide
+First-time checklist
+1) Open http://localhost:3001/settings
+2) Set Anthropic API key
+3) Generate WhatsApp QR and scan (Linked Devices) → send test
+4) (Optional) Start an OpenClaw Node on your machine for browser tasks; approve the pending request in Settings
 
-Start here:
-
-- `docs/WEB_UI.md`
-
-## Local webhook test
-To simulate a WhatsApp inbound message:
-
-```bash
-DEV_USER_PHONE="+15551234567" docker compose -f infra/docker/docker-compose.yml up
-```
-
-Then in another shell:
-
-```bash
-FROM_NUMBER="+15551234567" BODY="hello concierge" ./scripts/send-whatsapp-webhook.sh
-```
-
-## WhatsApp Pairing (Dev)
-OpenClaw uses Baileys for dev WhatsApp connectivity.
-
-Recommended: pair from the Web UI:
-
-- Open `http://localhost:3001/settings`
-- Login
-- Click **Generate QR** under “WhatsApp Pairing (Dev)” and scan it in WhatsApp → Linked Devices
-- Click **Send test to me** to confirm outbound sends
-- If pairing is flaky, click **Force relink** (hard-resets the cached auth dir and regenerates the QR)
-
-Fallback: pair from the terminal:
-
-```bash
-docker compose -f infra/docker/docker-compose.yml exec -it openclaw node openclaw.mjs channels login whatsapp
-```
-
-Without pairing, outbound sends will fail with `no_active_listener`.
-
-## Smoke Test
-
+Smoke test
 ```bash
 ./scripts/smoke.sh
 ```
 
-## Platform Docs
+Troubleshooting (quick)
+- WhatsApp “pairing required” → Settings → Force relink, then rescan
+- Browser “blocked/bot” on quick‑commerce → run a Node on your laptop and select node target
+- Missing migrations → `pnpm db:migrate` (runs inside worker/API on start, but run manually if needed)
 
-Start here:
-
-- `docs/LOCAL_DEV.md`
-- `docs/ARCHITECTURE.md`
-- `docs/API.md`
+Key docs
+- docs/LOCAL_DEV.md — step‑by‑step dev setup & common issues
+- docs/WEB_UI.md — how to pair WhatsApp/Node, set keys
+- docs/ARCHITECTURE.md — end‑to‑end system design
+- docs/API.md — API surfaces & webhooks
