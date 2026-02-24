@@ -58,22 +58,41 @@ function isPresentationIntent(text: string): boolean {
   return /\b(ppt|pptx|powerpoint|presentation|pitch deck|deck|slides)\b/.test(t);
 }
 
+function isEmailIntent(text: string): boolean {
+  const t = text.toLowerCase();
+  return /\b(email|inbox|mailbox|gmail|outlook|office 365|o365|m365|read my mail)\b/.test(t);
+}
+
 function presentationDirective(prompt: string): string {
   const topic = prompt.trim();
   return [
     "[PLATFORM DIRECTIVE: PRESENTATION FLOW]",
     "The user is requesting a presentation/deck. You are an operating concierge and must pick the BEST approach before building.",
     "Approach selection (reasoned):",
-    "1) Prefer purpose-built AI deck tools via browser (Gamma → Canva) because they deliver higher-quality visuals.",
-    "2) If browser automation is unavailable/blocked, fallback to local PPTX generation via `deck_send_pptx`.",
+    "1) Prefer purpose-built AI deck tools via browser (Gamma → Canva → Presentations.AI) because they deliver higher-quality visuals.",
+    "2) Use node browser first (target='node', profile='openclaw'); if missing, fallback to host; only if all browser attempts fail, use local PPTX generation via `deck_send_pptx`.",
     "Process:",
     "- Formulate a concise slide plan (8–12 slides) and keep it in working memory (do NOT send it yet).",
     "- Start browser: target='node' profile='openclaw'; if that fails, retry target='host'.",
-    "- Open Gamma (gamma.app) first. If Gamma unreachable or blocked, try Canva (canva.com).",
-    "- Create deck in the tool, wait for generation, download PPTX, then send the PPTX as media (not just a link).",
-    "- If both browser tools fail, call `deck_send_pptx` with the slide plan to ensure delivery.",
+    "- Open Gamma (gamma.app) first. If blocked (Cloudflare/CAPTCHA), try Canva (canva.com). If blocked again, try Presentations.AI. Use a temp email if sign-up required.",
+    "- Create deck, wait for generation, download PPTX, then send the PPTX as media (not just a link).",
+    "- If all browser tools fail, call `deck_send_pptx` with the slide plan to ensure delivery.",
     "- After sending, ask one short follow-up: 'Want a different theme, more slides, or company-specific branding?'",
     `Topic/context (user message): ${topic}`,
+  ].join("\n");
+}
+
+function emailDirective(prompt: string): string {
+  return [
+    "[PLATFORM DIRECTIVE: EMAIL FLOW]",
+    "Goal: read the user's recent emails.",
+    "Do NOT say you lack access. Ask only what's needed: provider (Gmail/Outlook/IMAP), email, password/app-password. If initial login fails, ask for an app password.",
+    "Approach:",
+    "- Use browser automation to log in (target='node' first, then 'host').",
+    "- If 2FA/OTP pops up, call otp_request and wait; then continue.",
+    "- Once logged in, list the most recent messages with subject + from + snippet.",
+    "- If provider blocks automation, ask a single fallback question: 'Run browser on your machine (OpenClaw Node) or share app password?'.",
+    `User message: ${prompt.trim()}`,
   ].join("\n");
 }
 
@@ -100,6 +119,9 @@ export default {
       }
       if (isPresentationIntent(prompt)) {
         directives.push(presentationDirective(prompt));
+      }
+      if (isEmailIntent(prompt)) {
+        directives.push(emailDirective(prompt));
       }
       if (isPhotoIntent(prompt)) {
         directives.push(photoDirective());

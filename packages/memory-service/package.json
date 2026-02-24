@@ -15,6 +15,7 @@
     "@concierge/logger": "workspace:*",
     "@concierge/types": "workspace:*",
     "drizzle-orm": "^0.36.4",
-    "fastify": "^4.28.1"
+    "fastify": "^4.28.1",
+    "openai": "^4.77.0"
   }
 }
