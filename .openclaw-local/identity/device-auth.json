@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "deviceId": "4665409f9b3cdce890833374e34dbfcd13e9a2b661bc190d4c1ea4a5c7b0ee5f",
+  "tokens": {
+    "node": {
+      "token": "nCH7dDGd5FFm7meFCRWwwQSF8sY0n7xXxUHoeEc1kA0",
+      "role": "node",
+      "scopes": [],
+      "updatedAtMs": 1771960867004
+    },
+    "operator": {
+      "token": "itsbnesfjOSZ2XZZo_ryCEGmuIDDlJsQ6FJl5bvBQy8",
+      "role": "operator",
+      "scopes": [
+        "operator.admin",
+        "operator.approvals",
+        "operator.pairing"
+      ],
+      "updatedAtMs": 1771960869908
+    }
+  }
+}

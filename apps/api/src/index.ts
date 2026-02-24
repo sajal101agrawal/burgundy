@@ -1292,6 +1292,88 @@ app.post(
   },
 );
 
+// Internal endpoint: approve all pending pairing requests (both device and node flows).
+// Called from dev-up.sh after the local node host starts, so no manual UI interaction is needed.
+// The node host uses the device.pair.* flow when it first connects; node.pair.* is a separate flow.
+app.post("/internal/nodes/auto-pair", async (request, reply) => {
+  if (!requireInternalAuth(request, reply)) {
+    return;
+  }
+  if (!openclawGatewayUrl) {
+    reply.code(503);
+    return { ok: false, error: "openclaw_gateway_not_configured" };
+  }
+
+  // Fetch both device pairing requests (used by node hosts) and node pairing requests
+  let devicePairing: Record<string, unknown> = {};
+  let nodePairing: Record<string, unknown> = {};
+  try {
+    [devicePairing, nodePairing] = await Promise.all([
+      callOpenclawGateway<Record<string, unknown>>({
+        url: openclawGatewayUrl,
+        token: openclawGatewayToken || undefined,
+        method: "device.pair.list",
+        params: {},
+        timeoutMs: 10_000,
+      }).catch(() => ({})),
+      callOpenclawGateway<Record<string, unknown>>({
+        url: openclawGatewayUrl,
+        token: openclawGatewayToken || undefined,
+        method: "node.pair.list",
+        params: {},
+        timeoutMs: 10_000,
+      }).catch(() => ({})),
+    ]);
+  } catch (err) {
+    reply.code(503);
+    return { ok: false, error: "gateway_unavailable", detail: String(err) };
+  }
+
+  // device.pair.list returns { pending: [...], paired: [...] }
+  const deviceRequests = Array.isArray(devicePairing?.pending)
+    ? (devicePairing.pending as Array<{ requestId?: string; displayName?: string; role?: string }>)
+    : [];
+
+  // node.pair.list returns { requests: [...] }
+  const nodeRequests = Array.isArray(nodePairing?.requests)
+    ? (nodePairing.requests as Array<{ requestId?: string; displayName?: string }>)
+    : [];
+
+  const allPending = [
+    ...deviceRequests.map((r) => ({ ...r, flow: "device" })),
+    ...nodeRequests.map((r) => ({ ...r, flow: "node" })),
+  ];
+
+  if (allPending.length === 0) {
+    return { ok: true, approved: 0, message: "no_pending_requests" };
+  }
+
+  const approved: string[] = [];
+  const failed: string[] = [];
+
+  for (const req of allPending) {
+    const requestId = req.requestId;
+    if (!requestId) continue;
+    const method = req.flow === "device" ? "device.pair.approve" : "node.pair.approve";
+    try {
+      await callOpenclawGateway({
+        url: openclawGatewayUrl,
+        token: openclawGatewayToken || undefined,
+        method,
+        params: { requestId },
+        timeoutMs: 10_000,
+      });
+      approved.push(requestId);
+      app.log.info({ requestId, displayName: req.displayName, flow: req.flow }, "pairing auto-approved");
+    } catch (err) {
+      failed.push(requestId);
+      app.log.warn({ requestId, err: String(err), flow: req.flow }, "pairing auto-approve failed");
+    }
+  }
+
+  return { ok: true, approved: approved.length, approvedIds: approved, failedIds: failed };
+});
+
 app.post("/internal/openclaw/provision-agent", async (request, reply) => {
   if (!requireInternalAuth(request, reply)) {
     return;

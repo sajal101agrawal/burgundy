@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "nodeId": "aa673303-8c94-41bb-a82f-c1816e655cee",
+  "displayName": "Local Browser Node",
+  "gateway": {
+    "host": "127.0.0.1",
+    "port": 18789,
+    "tls": false
+  }
+}

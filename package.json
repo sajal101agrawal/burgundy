@@ -11,6 +11,7 @@
     "lint:upstream": "turbo run lint --filter=openclaw --filter=openclaw-control-ui",
     "typecheck": "turbo run typecheck --filter=!openclaw --filter=!openclaw-control-ui",
     "typecheck:upstream": "turbo run typecheck --filter=openclaw --filter=openclaw-control-ui",
+    "node:start": "./scripts/node-start.sh",
     "smoke": "./scripts/smoke.sh",
     "db:migrate": "pnpm --filter @concierge/db migrate",
     "db:generate": "pnpm --filter @concierge/db generate"
