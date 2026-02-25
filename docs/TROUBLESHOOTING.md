@@ -1,157 +1,239 @@
 # Troubleshooting
 
-## “plugin manifest not found” in OpenClaw logs
+---
 
-Cause:
+## Agent Behavior
 
-- A platform plugin is missing `openclaw.plugin.json`.
+### Agent doesn't reason or plan — just acts immediately or gives a generic answer
 
-Fix:
+**Cause**: The agent's persona files (`SOUL.md`, `AGENTS.md`) are either not present, stale, or written to the wrong path.
 
-- Ensure each plugin folder under `packages/openclaw-extensions/*` contains `openclaw.plugin.json`.
-- Rebuild OpenClaw container:
-
+**Diagnosis**: Check the actual workspace files:
 ```bash
-docker compose -f infra/docker/docker-compose.yml up -d --build openclaw
+docker exec docker-openclaw-1 cat /workspace/workspace-00000000-0000-0000-0000-000000000001/AGENTS.md | head -20
+```
+If it shows the generic OpenClaw workspace guide instead of the Concierge rules, the files need to be rewritten.
+
+**Fix**: Restart the API container — it rewrites the workspace files on startup:
+```bash
+docker compose -f infra/docker/docker-compose.yml up -d --force-recreate api
 ```
 
-## Outbound WhatsApp fails with `no_active_listener`
+Then verify:
+```bash
+docker exec docker-openclaw-1 head -10 /workspace/workspace-00000000-0000-0000-0000-000000000001/SOUL.md
+# Should show: "You are Concierge — an autonomous operating assistant..."
+```
 
-Cause:
+### Agent says "I don't have access to ordering apps" or similar
 
-- WhatsApp not paired in OpenClaw container.
-  - Or OpenClaw is restarting and the listener hasn’t re-attached yet (transient).
+**Cause**: The intent router directive wasn't injected, or the agent ignored it.
 
-Fix:
+**Fix**:
+1. Verify the intent router plugin is loaded:
+   ```bash
+   docker logs docker-openclaw-1 | grep intent
+   docker exec docker-openclaw-1 ls /app/extensions/intent-router-skill/dist/
+   ```
+2. Check that the plugin is enabled in the platform config:
+   ```bash
+   docker exec docker-openclaw-1 grep -A3 "intent-router" /workspace/state/openclaw.platform.json
+   ```
+3. Make sure the extension was built before the container:
+   ```bash
+   pnpm --filter intent-router-skill build
+   docker compose -f infra/docker/docker-compose.yml up -d --build --force-recreate openclaw
+   ```
 
+### Agent creates PPT directly without using Gamma/Canva
+
+**Cause**: Same as above — `AGENTS.md` or the intent router directive isn't reaching the agent.
+
+**Fix**: Same as "agent doesn't reason" fix above.
+
+---
+
+## WhatsApp
+
+### Outbound fails with `no_active_listener` (503)
+
+**Cause**: WhatsApp is not paired to the OpenClaw container, or the Baileys listener hasn't re-attached yet after a restart.
+
+**Fix (Web UI)**:
+1. Open http://localhost:3001/settings
+2. Click **Generate QR** → scan on phone → wait for "WhatsApp linked"
+3. Click **Send test to me**
+
+**Fix (terminal fallback)**:
 ```bash
 docker compose -f infra/docker/docker-compose.yml exec -it openclaw node openclaw.mjs channels login whatsapp
 ```
 
-Recommended (Web UI):
+If you see `no_transport` from the inbound endpoint, wait 5-10 seconds — the platform router retries transient 503s, but right after a config reload there may be a brief window with no listener attached.
 
-1. Open `http://localhost:3001/settings`
-2. Login
-3. Generate QR and scan on the phone that owns the WhatsApp account
-4. Click **Send test to me**
+### WhatsApp pairing fails with `status=515 ... (restart required)`
 
-If you see `no_transport` from the internal inbound endpoint, wait ~5–10 seconds and retry. The platform router retries transient 503s, but right after a config reload OpenClaw may briefly have no listener attached.
+**Cause**: A Baileys "restart-after-pairing" edge case — WhatsApp asks the web session to reconnect right after scanning.
 
-## WhatsApp pairing fails with `status=515 ... (restart required)`
+**Fix**:
+1. Keep the Settings page open for ~15 seconds — it should recover automatically
+2. If it keeps looping, click **Force relink** (clears cached auth + generates a fresh QR)
+3. If it still fails, remove the linked device on your phone and try again
 
-Cause:
+### WhatsApp status shows 401 Unauthorized / "Session logged out"
 
-- A Baileys “restart-after-pairing” edge case: WhatsApp asks the web session to reconnect right after scanning.
+**Cause**: The linked-device session was revoked (e.g., logged out from phone), or cached credentials are corrupted.
 
-Fix:
-
-1. Keep the Settings page open for ~15 seconds; it should recover automatically.
-2. If it keeps looping, click **Force relink** (clears cached auth + generates a fresh QR).
-3. If it still fails, remove existing linked devices on the phone and try again.
-
-## WhatsApp status shows 401 Unauthorized / “Session logged out”
-
-Cause:
-
-- The linked-device session was revoked, or cached creds are corrupted/partial.
-
-Fix:
-
-1. `http://localhost:3001/settings` → **Force relink**
+**Fix**:
+1. Settings → **Force relink**
 2. Restart OpenClaw:
+   ```bash
+   docker compose -f infra/docker/docker-compose.yml up -d --force-recreate openclaw
+   ```
 
+### Messages from user not reaching the agent
+
+**Cause**: User's phone number is not allowlisted or not routable to an agent.
+
+**Fix**:
+1. Confirm the user is registered: check the users table or try `POST /auth/register`
+2. Check the routing logs in the API container:
+   ```bash
+   docker logs docker-api-1 --tail 50 | grep whatsapp
+   ```
+3. Verify the agent binding exists in OpenClaw config:
+   ```bash
+   docker exec docker-openclaw-1 grep "+phonenumber" /workspace/state/openclaw.platform.json
+   ```
+
+---
+
+## Browser Automation
+
+### Sites show Cloudflare / "Access Denied" / 429
+
+**Cause**: Bot protection blocks the datacenter IP of the OpenClaw Docker container.
+
+**Fix**:
+1. Run `pnpm node:start` to start the local browser node using your residential IP
+2. Verify it's connected in Settings → "Run Browser On Your Machine"
+3. The agent automatically uses `target="node"` (residential IP) first — it falls back to `target="host"` only if the node is unavailable
+
+If the user explicitly wants a specific provider that is blocking:
+- Agent should try the next best provider automatically
+- If blocked on all providers, agent asks: "Switch provider or run the browser on your machine?"
+
+### Browser node not connecting / pairing not approved
+
+**Cause**: The node host started but the pairing request wasn't approved automatically.
+
+**Fix**:
 ```bash
-docker compose -f infra/docker/docker-compose.yml up -d --force-recreate openclaw
+pnpm node:start
+```
+This kills any stale node host, starts a fresh one, and polls `POST /internal/nodes/auto-pair` until connected.
+
+If still failing, check the node log:
+```bash
+cat .openclaw-local/node-host.log
 ```
 
-## Web UI `/settings` shows 500 errors
+And check the API auto-pair response manually:
+```bash
+curl -sf -X POST http://localhost:3005/internal/nodes/auto-pair \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer dev-internal-token" \
+  -d '{}'
+```
 
-Cause:
+### Browser tool says "Chrome extension relay is running, but no tab is connected"
 
-- A stale/corrupted Next.js dev build output.
+**Cause**: The agent is trying to use `profile="chrome"` (the Chrome-extension relay), but no Chrome tab has been attached via the OpenClaw Browser Relay extension.
 
-Fix:
+**Fix**: In this repo's Docker dev stack, the default profile is `"openclaw"` (headless Chromium in-container). Verify:
+```bash
+docker exec docker-openclaw-1 grep "defaultProfile" /workspace/state/openclaw.platform.json
+```
+Should show `"openclaw"`. If showing `"chrome"`, update the platform config.
 
-- Restart the `web` service (dev compose clears `apps/web/.next` on startup):
+### Browser tool says "tab not found" or stale targetId
 
+**Cause**: A browser action was attempted with a stale or invalid `targetId`.
+
+**Fix**: The platform patches OpenClaw to auto-pick an open page tab when `targetId` is omitted. If still hitting it:
+1. Run `browser action=tabs` to list valid tab IDs
+2. Retry with the correct `targetId`
+
+---
+
+## API / Services
+
+### Web UI `/settings` shows 500 errors
+
+**Cause**: Stale or corrupted Next.js dev build output.
+
+**Fix** (dev compose clears `apps/web/.next` on startup):
 ```bash
 docker compose -f infra/docker/docker-compose.yml up -d --force-recreate web
 ```
 
-## API can’t access DB tables
+### API can't access DB tables / migration errors
 
-Cause:
+**Cause**: Migrations didn't run, or Postgres isn't reachable.
 
-- Migrations did not run or Postgres isn’t reachable.
-
-Fix:
-
-- Check docker compose status:
-
+**Fix**:
 ```bash
+# Check services
 docker compose -f infra/docker/docker-compose.yml ps
-```
 
-- Run:
-
-```bash
+# Run migrations manually
 pnpm db:migrate
 ```
 
-## Agent can’t run / model errors
+### Agent can't run / model errors
 
-Cause:
+**Cause**: Missing or invalid `ANTHROPIC_API_KEY`.
 
-- Missing `ANTHROPIC_API_KEY` (or invalid key).
+**Fix**: Set the key in Settings → Anthropic API Key, or in `infra/docker/.env` and restart the API.
 
-Fix:
+### OpenClaw log shows "plugin manifest not found"
 
-- Set the key with `pnpm dev:up` prompt, or via `http://localhost:3001/settings`.
+**Cause**: A platform plugin is missing `openclaw.plugin.json`.
 
-## Browser tool says “Chrome extension relay is running, but no tab is connected”
+**Fix**:
+1. Check each plugin in `packages/openclaw-extensions/*/openclaw.plugin.json` exists
+2. Rebuild the OpenClaw container:
+   ```bash
+   docker compose -f infra/docker/docker-compose.yml up -d --build --force-recreate openclaw
+   ```
 
-Cause:
+### `POST /internal/nodes/auto-pair` returns `{ "ok": false, "error": "openclaw_gateway_not_configured" }`
 
-- The browser tool is using profile `"chrome"` (the Chrome-extension relay profile), but no real Chrome tab has been attached via the OpenClaw Browser Relay extension.
+**Cause**: `OPENCLAW_GATEWAY_URL` is not set in the API container environment.
 
-Fix:
+**Fix**: Verify `infra/docker/docker-compose.yml` has `OPENCLAW_GATEWAY_URL=ws://openclaw:18789` in the `api` service environment.
 
-- In this repo’s Docker dev stack, we default to profile `"openclaw"` (headless Chromium in-container). Ensure the OpenClaw config has:
-  - `browser.defaultProfile="openclaw"`
-- If you actually want to control your desktop Chrome via extension relay, you must:
-  - install the OpenClaw Browser Relay extension in Chrome
-  - click the toolbar icon on the target tab (badge ON)
-  - then use `profile="chrome"`
+---
 
-## Browser tool says “tab not found”
+## General
 
-Cause:
-
-- A browser action was attempted without a valid `targetId` (or using a stale `targetId`).
-
-Fix:
-
-- The platform patches OpenClaw so `snapshot/navigate/act/...` will auto-pick an open page tab when `targetId` is omitted.
-- If you still hit it:
-  1. Run `browser` with `action=tabs` and note a valid `targetId`.
-  2. Retry with that `targetId`.
-
-## Some sites (e.g. Blinkit) show Cloudflare / “Access Denied”
-
-Cause:
-
-- Bot protection / IP reputation blocks headless, datacenter-origin browser automation.
-
-Fix options:
-
-- Switch providers (Zepto / Instamart / etc) and retry.
-- Run browser automation on the user’s machine (OpenClaw Node browser proxy) so traffic originates from a residential IP.
-- Fall back to human-in-the-loop: have the user complete the blocked step and then reply “done” so the agent continues.
-
-## Smoke Test
-
-When in doubt:
+### Smoke test fails
 
 ```bash
 pnpm smoke
 ```
+
+Read the output carefully — it shows exactly which step failed. Common causes:
+- TypeScript errors → `pnpm typecheck`
+- Docker compose not up → `./scripts/dev-up.sh`
+- API not responding → check `docker logs docker-api-1`
+- OpenClaw plugin errors → check `docker logs docker-openclaw-1`
+
+### Hard reset (lose all state)
+
+```bash
+docker compose -f infra/docker/docker-compose.yml down -v
+./scripts/dev-up.sh
+```
+
+This destroys all data (Postgres, Redis, OpenClaw workspace, vault). Use only in dev.

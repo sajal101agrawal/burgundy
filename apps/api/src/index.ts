@@ -229,8 +229,6 @@ async function upsertOpenclawAgentBinding(params: {
     });
 
     agentsObj.list = list;
-    // NOTE: Do not add custom keys under agents.defaults; OpenClaw validates config strictly.
-    // Any platform prompt shaping should be done via AGENTS.md and prompt hooks (plugins).
     const defaults =
       agentsObj.defaults && typeof agentsObj.defaults === "object"
         ? (agentsObj.defaults as JsonObject)
@@ -239,6 +237,10 @@ async function upsertOpenclawAgentBinding(params: {
     if ("workspaceNotes" in defaults) {
       delete (defaults as any).workspaceNotes;
     }
+    // Enable block streaming so the agent sends progress messages in real-time
+    // (e.g. "Searching Zepto...", "Logging in...") as they are generated rather
+    // than accumulating all output and sending one big message at the end.
+    defaults.blockStreamingDefault = "on";
     agentsObj.defaults = defaults;
     cfg.agents = agentsObj;
 

@@ -1,20 +1,41 @@
 # Platform Docs
 
-This folder documents the **AI Concierge Platform** layer (multi-tenant SaaS scaffolding built around OpenClaw).
+Documentation for the AI Concierge Platform — a WhatsApp-native autonomous agent system built on OpenClaw.
 
-If you just want to run the stack locally, start here:
+Start here based on what you need:
 
-- `docs/LOCAL_DEV.md`
-- `docs/WEB_UI.md`
-- `README.md` (repo root)
+---
 
-If you want to understand how the system works:
+## Getting started
 
-- `docs/ARCHITECTURE.md`
-- `docs/API.md`
-- `docs/OPENCLAW.md`
+- **`docs/LOCAL_DEV.md`** — Prerequisites, quick start, WhatsApp pairing, browser node setup, all service URLs, environment variables
 
-Troubleshooting and operational notes:
+---
 
-- `docs/TROUBLESHOOTING.md`
-- `docs/SECURITY.md`
+## Understanding the system
+
+- **`docs/ARCHITECTURE.md`** — Full system design: services, message flow, agent behavior (REASON → PLAN → ACT → DELIVER), intent router, workspace files, OTP relay, multi-agent setup, local browser node, vault
+
+- **`docs/OPENCLAW.md`** — OpenClaw fork details: what was patched, all 11 platform plugins (intent-router, vault, OTP relay, stuck handler, checkpoint, deck, media, screenshot, deployment, account-creator, userid-injector), workspace file paths, dev configuration
+
+---
+
+## Reference
+
+- **`docs/API.md`** — All API endpoints: public (health, auth), JWT-protected (tasks, vault, WhatsApp, nodes), internal (provision, user-ask, pending-listener, interrupt-classify, checkpoint, auto-pair)
+
+- **`docs/WEB_UI.md`** — Web UI pages: settings (API key, WhatsApp QR, node pairing), dashboard, vault viewer, tasks, registration
+
+---
+
+## Operations
+
+- **`docs/TROUBLESHOOTING.md`** — Common failure modes and fixes: agent behavior issues, WhatsApp problems, browser automation failures, service errors
+
+- **`docs/SECURITY.md`** — Security model: internal auth, vault encryption, JWT, Baileys risks, agent confirmations, credential handling, data isolation
+
+---
+
+## Repo root
+
+- **`README.md`** — Project overview, capabilities table, repository layout, quick start, agent behavior design, browser node, development workflows, environment variables, troubleshooting quick reference
