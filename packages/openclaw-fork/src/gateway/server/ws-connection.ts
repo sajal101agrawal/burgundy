@@ -160,11 +160,17 @@ export function attachGatewayWsConnectionHandler(params: {
     };
 
     const connectNonce = randomUUID();
-    send({
-      type: "event",
-      event: "connect.challenge",
-      payload: { nonce: connectNonce, ts: Date.now() },
-    });
+    // Delay the challenge slightly so Docker Desktop's VPN proxy can fully enter
+    // WS proxy mode before the first server→client frame is sent. Without this
+    // delay, the proxy drops the challenge frame and the client never receives
+    // the nonce it needs to sign its connect message.
+    setTimeout(() => {
+      send({
+        type: "event",
+        event: "connect.challenge",
+        payload: { nonce: connectNonce, ts: Date.now() },
+      });
+    }, 100);
 
     const close = (code = 1000, reason?: string) => {
       if (closed) {

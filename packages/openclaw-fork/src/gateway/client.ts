@@ -21,7 +21,7 @@ import {
   type GatewayClientName,
 } from "../utils/message-channel.js";
 import { buildDeviceAuthPayload } from "./device-auth.js";
-import { isPrivateOrLoopbackAddress, isSecureWebSocketUrl } from "./net.js";
+import { isLoopbackHost, isPrivateOrLoopbackAddress, isSecureWebSocketUrl } from "./net.js";
 import {
   type ConnectParams,
   type EventFrame,
@@ -153,6 +153,13 @@ export class GatewayClient {
     const wsOptions: ClientOptions = {
       maxPayload: 25 * 1024 * 1024,
     };
+    // When connecting to a loopback address over a Docker Desktop VPN proxy, the
+    // connection appears to the gateway as coming from 172.217.x.x (not loopback).
+    // Setting X-Forwarded-For tells the gateway the actual originating client IP
+    // (127.0.0.1) so it can treat this as a local connection (no device nonce required).
+    if (url.startsWith("ws://") && isLoopbackHost(new URL(url).hostname)) {
+      wsOptions.headers = { "x-forwarded-for": "127.0.0.1" };
+    }
     if (url.startsWith("wss://") && this.opts.tlsFingerprint) {
       wsOptions.rejectUnauthorized = false;
       wsOptions.checkServerIdentity = ((_host: string, cert: CertMeta) => {
