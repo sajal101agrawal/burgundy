@@ -241,6 +241,23 @@ async function upsertOpenclawAgentBinding(params: {
     // (e.g. "Searching Zepto...", "Logging in...") as they are generated rather
     // than accumulating all output and sending one big message at the end.
     defaults.blockStreamingDefault = "on";
+    const model = defaults.model && typeof defaults.model === "object" ? (defaults.model as JsonObject) : {};
+    model.primary = "anthropic/claude-sonnet-4-6";
+    defaults.model = model;
+    // Allow sandboxed agents to use target="host" (falls through to the node browser proxy)
+    // so bot-protected sites like Zomato are accessed via the Mac's Chrome instead of
+    // the Docker headless Chromium which triggers bot detection.
+    const sandbox =
+      defaults.sandbox && typeof defaults.sandbox === "object"
+        ? (defaults.sandbox as JsonObject)
+        : {};
+    const sandboxBrowser =
+      sandbox.browser && typeof sandbox.browser === "object"
+        ? (sandbox.browser as JsonObject)
+        : {};
+    if (sandboxBrowser.allowHostControl === undefined) sandboxBrowser.allowHostControl = true;
+    sandbox.browser = sandboxBrowser;
+    defaults.sandbox = sandbox;
     agentsObj.defaults = defaults;
     cfg.agents = agentsObj;
 
@@ -723,6 +740,7 @@ For almost every task, open a browser and do it on the web.
 - If node is unavailable or times out, fallback immediately to: target="host".
 - NEVER claim a site is blocked or inaccessible without actually opening it and taking a snapshot.
 - NEVER invent errors, HTTP codes, or block messages. Only report what you actually observe.
+- NEVER skip a browser attempt based on memory from a previous session. Every task starts fresh. A site that was blocked before may work now — always try.
 
 ## Asking for Credentials
 When a site requires login, ask for EXACTLY what is needed:
@@ -1631,6 +1649,89 @@ function resolveInboundUrl(base: string, pathValue: string): string {
   }
   return `${trimmedBase}${normalizedPath}`;
 }
+
+// The OpenClaw browser control service binds to loopback only and is not accessible
+// from other containers via HTTP. Instead, we use the gateway WebSocket `browser.request`
+// method, which dispatches browser routes in-process and saves media to the shared
+// Docker volume (openclaw-workspace). The API container mounts the same volume at
+// /openclaw-workspace, so it can read the saved screenshot files directly.
+
+// Map a gateway-container media path to the API-container equivalent path.
+// openclaw container: /workspace/...  →  api container: /openclaw-workspace/...
+function mapGatewayPathToApi(gatewayPath: string): string {
+  return gatewayPath.replace(/^\/workspace\//, "/openclaw-workspace/");
+}
+
+type BrowserRequestResult = Record<string, unknown>;
+
+async function callBrowserRequest(params: {
+  method: "GET" | "POST";
+  path: string;
+  query?: Record<string, string>;
+  body?: unknown;
+  timeoutMs?: number;
+}): Promise<BrowserRequestResult> {
+  return callOpenclawGateway<BrowserRequestResult>({
+    url: openclawGatewayUrl,
+    token: openclawGatewayToken,
+    method: "browser.request",
+    params: {
+      method: params.method,
+      path: params.path,
+      query: params.query,
+      body: params.body ?? {},
+      timeoutMs: params.timeoutMs ?? 15_000,
+    },
+    timeoutMs: (params.timeoutMs ?? 15_000) + 5_000,
+  });
+}
+
+app.get("/internal/browser/screenshot", async (request, reply) => {
+  if (!requireInternalAuth(request, reply)) return;
+  const profile = (request.query as Record<string, string>).profile || "openclaw";
+  try {
+    const result = await callBrowserRequest({
+      method: "POST",
+      path: "/screenshot",
+      query: { profile },
+      body: {},
+      timeoutMs: 20_000,
+    });
+    const gatewayPath = typeof result?.path === "string" ? result.path : null;
+    if (!gatewayPath) {
+      reply.code(503);
+      return { ok: false, error: "no_screenshot_path", detail: result };
+    }
+    const localPath = mapGatewayPathToApi(gatewayPath);
+    let buf: Buffer;
+    try {
+      buf = await fs.readFile(localPath);
+    } catch {
+      reply.code(503);
+      return { ok: false, error: "screenshot_file_unreadable", path: localPath };
+    }
+    reply.type("image/png").send(buf);
+  } catch (err) {
+    reply.code(503);
+    return { ok: false, error: "browser_unavailable", detail: String(err) };
+  }
+});
+
+app.get("/internal/browser/status", async (request, reply) => {
+  if (!requireInternalAuth(request, reply)) return;
+  const profile = (request.query as Record<string, string>).profile || "openclaw";
+  try {
+    return await callBrowserRequest({
+      method: "GET",
+      path: "/",
+      query: { profile },
+      timeoutMs: 8_000,
+    });
+  } catch (err) {
+    reply.code(503);
+    return { ok: false, error: "browser_unavailable", detail: String(err) };
+  }
+});
 
 const port = Number.parseInt(process.env.PORT || "3000", 10);
 

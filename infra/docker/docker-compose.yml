@@ -70,6 +70,8 @@ services:
       - /app/.turbo
     environment:
       - PORT=3001
+      - PLATFORM_API_URL=http://api:3000
+      - PLATFORM_INTERNAL_TOKEN=dev-internal-token
     ports:
       - "3001:3001"
 
@@ -179,6 +181,7 @@ services:
       - OPENCLAW_BROWSER_CDP_READY_TIMEOUT_MS=60000
     ports:
       - "18789:18789"
+      - "18795:18795"
       - "18810:18810"
     volumes:
       - openclaw-workspace:/workspace

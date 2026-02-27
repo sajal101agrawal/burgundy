@@ -3,10 +3,6 @@ set -euo pipefail
 
 ENV_FILE="infra/docker/.env"
 COMPOSE_FILE="infra/docker/docker-compose.yml"
-NODE_STATE_DIR=".openclaw-local"
-NODE_PID_FILE=".openclaw-local/node-host.pid"
-API_URL="http://localhost:3005"
-INTERNAL_TOKEN="dev-internal-token"
 
 mkdir -p "$(dirname "$ENV_FILE")"
 touch "$ENV_FILE"
@@ -42,103 +38,41 @@ echo "API:     http://localhost:3005"
 echo "Vault:   http://localhost:3002"
 echo "Memory:  http://localhost:3003"
 echo "Email:   http://localhost:3004"
+echo
 
-# ---------------------------------------------------------------------------
-# Local browser node — runs on this machine so automation uses your residential
-# IP. Quick-commerce sites (Blinkit/Zepto) block datacenter IPs; this fixes it.
-# ---------------------------------------------------------------------------
+# Ensure the gateway's internal agent device has the operator.write scope.
+# This scope is required for the agent sandbox to execute browser tool commands.
+# It is not granted by default during device pairing, so we patch it in after startup.
+# The change is persisted to the Docker volume and survives container restarts.
+echo "Patching agent device scopes..."
+OPENCLAW_STATE="$(docker compose -f "$COMPOSE_FILE" exec openclaw printenv OPENCLAW_STATE_DIR 2>/dev/null | tr -d '\r' || echo '/workspace/state')"
+docker compose -f "$COMPOSE_FILE" exec -T openclaw node -e "
+  const fs = require('fs');
+  const path = '${OPENCLAW_STATE}/devices/paired.json';
+  try {
+    const data = JSON.parse(fs.readFileSync(path, 'utf8'));
+    let changed = 0;
+    for (const [, dev] of Object.entries(data)) {
+      const d = dev;
+      if (d.clientMode === 'backend' && Array.isArray(d.scopes) && !d.scopes.includes('operator.write')) {
+        d.scopes.push('operator.write');
+        changed++;
+      }
+    }
+    if (changed > 0) {
+      fs.writeFileSync(path, JSON.stringify(data, null, 2));
+      console.log('Added operator.write scope to ' + changed + ' agent device(s).');
+    } else {
+      console.log('Agent device scopes already up to date.');
+    }
+  } catch (e) {
+    console.log('Scope patch skipped: ' + e.message);
+  }
+" 2>/dev/null || echo "Scope patch skipped (gateway not ready yet — will apply on next run)."
+echo
 
-start_local_node() {
-  mkdir -p "$NODE_STATE_DIR"
-
-  # Kill any stale node host from a previous run
-  if [[ -f "$NODE_PID_FILE" ]]; then
-    old_pid="$(cat "$NODE_PID_FILE" 2>/dev/null || true)"
-    if [[ -n "$old_pid" ]] && kill -0 "$old_pid" 2>/dev/null; then
-      echo "Stopping previous node host (PID $old_pid)..."
-      kill "$old_pid" 2>/dev/null || true
-      sleep 1
-    fi
-    rm -f "$NODE_PID_FILE"
-  fi
-
-  echo
-  echo "Starting local browser node (residential IP for Blinkit/Zepto/Instamart)..."
-
-  OPENCLAW_STATE_DIR="$NODE_STATE_DIR" \
-  OPENCLAW_GATEWAY_TOKEN="dev-gateway-token" \
-  node packages/openclaw-fork/openclaw.mjs node run \
-    --host 127.0.0.1 \
-    --port 18789 \
-    --display-name "Local Browser Node" \
-    >> "$NODE_STATE_DIR/node-host.log" 2>&1 &
-
-  local node_pid=$!
-  echo "$node_pid" > "$NODE_PID_FILE"
-  echo "Node host started (PID $node_pid). Log: $NODE_STATE_DIR/node-host.log"
-}
-
-auto_approve_node() {
-  echo "Waiting for node to connect and send pairing request..."
-  local max_attempts=20
-  local attempt=0
-  local connected=0
-
-  while [[ $attempt -lt $max_attempts ]]; do
-    sleep 3
-    attempt=$((attempt + 1))
-
-    # Auto-approve any pending pairing requests (device or node flow)
-    curl -sf -X POST "${API_URL}/internal/nodes/auto-pair" \
-      -H "Content-Type: application/json" \
-      -H "Authorization: Bearer ${INTERNAL_TOKEN}" \
-      -d '{}' \
-      >/dev/null 2>&1 || true
-
-    # Check if the node is now showing as connected via the OpenClaw CLI
-    if OPENCLAW_STATE_DIR="$NODE_STATE_DIR" \
-      OPENCLAW_GATEWAY_TOKEN="dev-gateway-token" \
-      node packages/openclaw-fork/openclaw.mjs nodes status --json 2>/dev/null \
-      | grep -qE '"connected"\s*:\s*true'; then
-      echo "Local browser node is connected and ready."
-      echo "Browser automation will now use your residential IP."
-      connected=1
-      break
-    fi
-
-    if [[ $attempt -lt $max_attempts ]]; then
-      echo "  Attempt $attempt/$max_attempts — waiting..."
-    fi
-  done
-
-  if [[ $connected -eq 0 ]]; then
-    echo
-    echo "Node pairing timed out. The node host is still running in the background."
-    echo "Go to http://localhost:3001/settings -> 'Run Browser On Your Machine' -> approve manually."
-    echo "Or run: pnpm node:start"
-  fi
-}
-
-# Check if node binary is available (only works when called from repo root with node installed)
-if command -v node >/dev/null 2>&1 && [[ -f "packages/openclaw-fork/openclaw.mjs" ]]; then
-  # Wait for API to be ready before starting node setup
-  echo
-  echo "Waiting for API to be ready..."
-  max_api_wait=30
-  api_attempt=0
-  while [[ $api_attempt -lt $max_api_wait ]]; do
-    if curl -sf "${API_URL}/health" >/dev/null 2>&1; then
-      break
-    fi
-    sleep 2
-    api_attempt=$((api_attempt + 2))
-  done
-
-  start_local_node
-  auto_approve_node &
-  echo
-  echo "Node pairing running in background. Check $NODE_STATE_DIR/node-host.log if needed."
-else
-  echo
-  echo "Tip: Run 'pnpm node:start' separately to enable browser automation from your residential IP."
-fi
+# Reconnect the local browser node after the gateway restarts.
+# The node process dies on gateway restart (ECONNRESET) and must be re-launched
+# so browser tool calls route to the Mac's Chrome instead of the Docker Chromium.
+echo "Reconnecting local browser node..."
+pnpm node:start || echo "Warning: node start failed. Browser automation will fall back to Docker Chromium."

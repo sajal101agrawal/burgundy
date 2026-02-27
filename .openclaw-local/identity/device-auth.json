@@ -6,17 +6,7 @@
       "token": "nCH7dDGd5FFm7meFCRWwwQSF8sY0n7xXxUHoeEc1kA0",
       "role": "node",
       "scopes": [],
-      "updatedAtMs": 1771960867004
-    },
-    "operator": {
-      "token": "itsbnesfjOSZ2XZZo_ryCEGmuIDDlJsQ6FJl5bvBQy8",
-      "role": "operator",
-      "scopes": [
-        "operator.admin",
-        "operator.approvals",
-        "operator.pairing"
-      ],
-      "updatedAtMs": 1771989809471
+      "updatedAtMs": 1772167405821
     }
   }
 }

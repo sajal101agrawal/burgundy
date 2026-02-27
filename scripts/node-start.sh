@@ -23,17 +23,40 @@ fi
 
 mkdir -p "$NODE_STATE_DIR"
 
-# Check if a node is already connected and healthy — skip startup if so
-check_already_connected() {
-  local resp
-  resp=$(OPENCLAW_STATE_DIR="$NODE_STATE_DIR" \
-    OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
-    node packages/openclaw-fork/openclaw.mjs nodes status --json 2>/dev/null || echo '{}')
-  # JSON output uses "connected": true (with space) from pretty-print
-  echo "$resp" | grep -qE '"connected"\s*:\s*true' && echo "yes" || echo "no"
+is_pid_alive() {
+  local pid="$1"
+  [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
 }
 
-  if [[ "$(check_already_connected 2>/dev/null)" == "yes" ]]; then
+# Check connection by asking the platform API for browser status.
+# If the browser is running via a node-provided path it confirms the node is
+# connected. This is more reliable than 'nodes status' which creates a second
+# WebSocket connection and fails with "device token mismatch" when the node is
+# already connected.
+is_browser_node_connected() {
+  local resp
+  resp=$(curl -sf --max-time 5 \
+    "${API_URL}/internal/browser/status?profile=openclaw" \
+    -H "Authorization: Bearer ${INTERNAL_TOKEN}" 2>/dev/null || echo '{}')
+  # Node-provided browser has userDataDir under .openclaw-local
+  echo "$resp" | grep -q '"running":true' \
+    && echo "$resp" | grep -q '\.openclaw-local' \
+    && echo "yes" || echo "no"
+}
+
+check_already_connected() {
+  if [[ -f "$NODE_PID_FILE" ]]; then
+    local pid
+    pid="$(cat "$NODE_PID_FILE" 2>/dev/null || true)"
+    if ! is_pid_alive "$pid"; then
+      echo "no"
+      return
+    fi
+  fi
+  is_browser_node_connected
+}
+
+if [[ "$(check_already_connected 2>/dev/null)" == "yes" ]]; then
   echo "Local browser node is already connected. Nothing to do."
   exit 0
 fi
@@ -55,44 +78,83 @@ echo "  State:   ${NODE_STATE_DIR}/"
 echo "  Log:     ${NODE_STATE_DIR}/node-host.log"
 echo
 
-OPENCLAW_STATE_DIR="$NODE_STATE_DIR" \
-OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
-node packages/openclaw-fork/openclaw.mjs node run \
-  --host "$GATEWAY_HOST" \
-  --port "$GATEWAY_PORT" \
-  --display-name "Local Browser Node" \
-  >> "$NODE_STATE_DIR/node-host.log" 2>&1 &
+# Resolve the auth token to use for initial connection.
+# Prefer the device-issued token (avoids "pairing required" for already-paired nodes).
+# If the device token turns out to be stale (gateway rotated tokens after rebuild),
+# we detect it below and fall back to a fresh gateway-token pairing.
+DEVICE_AUTH="$NODE_STATE_DIR/identity/device-auth.json"
+NODE_DEVICE_TOKEN=""
+if [[ -f "$DEVICE_AUTH" ]]; then
+  NODE_DEVICE_TOKEN=$(node -e "
+    try {
+      const d = JSON.parse(require('fs').readFileSync('$DEVICE_AUTH','utf8'));
+      process.stdout.write(d?.tokens?.node?.token || '');
+    } catch { process.stdout.write(''); }
+  " 2>/dev/null || true)
+fi
+CONN_TOKEN="${NODE_DEVICE_TOKEN:-$GATEWAY_TOKEN}"
 
-node_pid=$!
+start_node() {
+  local token="$1"
+  OPENCLAW_STATE_DIR="$NODE_STATE_DIR" \
+  OPENCLAW_GATEWAY_TOKEN="$token" \
+  node packages/openclaw-fork/openclaw.mjs node run \
+    --host "$GATEWAY_HOST" \
+    --port "$GATEWAY_PORT" \
+    --display-name "Local Browser Node" \
+    >> "$NODE_STATE_DIR/node-host.log" 2>&1 &
+  echo $!
+}
+
+node_pid=$(start_node "$CONN_TOKEN")
 echo "$node_pid" > "$NODE_PID_FILE"
 echo "Node host started (PID $node_pid)."
 echo
 
-# Poll for connection — first wait for the node to trigger a pairing request,
-# then approve it, then wait for a successful connection.
 echo "Waiting for node to connect and auto-pairing if needed..."
 
-for attempt in $(seq 1 20); do
+STALE_TOKEN_DETECTED=0
+
+for attempt in $(seq 1 25); do
   sleep 3
 
-  # First try to auto-approve any pending pairing requests
+  # If the node process has already died, check whether it was a token problem.
+  if ! is_pid_alive "$node_pid"; then
+    break
+  fi
+
+  # Detect stale device token: gateway says "mismatch" or "pairing required" in the log.
+  if [[ $STALE_TOKEN_DETECTED -eq 0 ]] && grep -q "device token mismatch\|rotate/reissue" \
+      "$NODE_STATE_DIR/node-host.log" 2>/dev/null; then
+    echo "  Stale device token detected — clearing device auth and re-pairing..."
+    STALE_TOKEN_DETECTED=1
+    # Kill current node process and remove the stale device auth.
+    kill "$node_pid" 2>/dev/null || true
+    sleep 1
+    rm -f "$DEVICE_AUTH"
+    rm -f "$NODE_PID_FILE"
+    # Restart with the shared gateway token to trigger a fresh pairing.
+    node_pid=$(start_node "$GATEWAY_TOKEN")
+    echo "$node_pid" > "$NODE_PID_FILE"
+    echo "  Restarted with gateway token (PID $node_pid)."
+    continue
+  fi
+
+  # Auto-approve any pending pairing requests.
   curl -sf -X POST "${API_URL}/internal/nodes/auto-pair" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${INTERNAL_TOKEN}" \
     -d '{}' \
     >/dev/null 2>&1 || true
 
-  # Check if the node is now connected
-  if OPENCLAW_STATE_DIR="$NODE_STATE_DIR" \
-    OPENCLAW_GATEWAY_TOKEN="$GATEWAY_TOKEN" \
-    node packages/openclaw-fork/openclaw.mjs nodes status --json 2>/dev/null \
-    | grep -qE '"connected"\s*:\s*true'; then
+  # Check if the node is now connected via the browser API.
+  if [[ "$(is_browser_node_connected)" == "yes" ]]; then
     echo "Local browser node is connected. Browser automation will now use your residential IP."
     exit 0
   fi
 
-  if [[ $attempt -lt 20 ]]; then
-    echo "  Attempt $attempt/20 — waiting..."
+  if [[ $attempt -lt 25 ]]; then
+    echo "  Attempt $attempt/25 — waiting..."
   fi
 done
 
