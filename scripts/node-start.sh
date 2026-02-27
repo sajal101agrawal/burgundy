@@ -28,18 +28,35 @@ is_pid_alive() {
   [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
 }
 
-# Check connection by asking the platform API for browser status.
-# The node-provided browser profile has userDataDir under .openclaw-local.
-# We only need the profile config to be present (node connected), not Chrome
-# actively running — Chrome starts lazily on first use.
+# Check that the Mac node is connected to the gateway.
+# The node spawns an openclaw-node subprocess that holds the WebSocket TCP connection.
+# We check if the node PID is alive AND an openclaw-node process has an ESTABLISHED
+# TCP connection to the gateway port.
 is_browser_node_connected() {
-  local resp
-  resp=$(curl -sf --max-time 5 \
-    "${API_URL}/internal/browser/status?profile=openclaw" \
-    -H "Authorization: Bearer ${INTERNAL_TOKEN}" 2>/dev/null || echo '{}')
-  # A 503 returns {"ok":false,"error":"browser_unavailable"} — node not connected.
-  # A successful response (node connected) includes userDataDir with .openclaw-local.
-  echo "$resp" | grep -q '\.openclaw-local' && echo "yes" || echo "no"
+  local pid
+  pid="$(cat "$NODE_PID_FILE" 2>/dev/null || true)"
+  if [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; then
+    echo "no"
+    return
+  fi
+  # Find any openclaw-node child processes (may be grandchildren via openclaw wrapper).
+  local child_pids
+  child_pids=$(pgrep -P "$pid" 2>/dev/null || true)
+  local check_pids="$child_pids"
+  # Also check grandchildren
+  for cpid in $child_pids; do
+    local grandchildren
+    grandchildren=$(pgrep -P "$cpid" 2>/dev/null || true)
+    check_pids="$check_pids $grandchildren"
+  done
+  # Check if any of those processes has an ESTABLISHED connection to the gateway port.
+  for cpid in $check_pids; do
+    if lsof -p "$cpid" -nP 2>/dev/null | grep -qE "TCP.*:${GATEWAY_PORT} \(ESTABLISHED\)"; then
+      echo "yes"
+      return
+    fi
+  done
+  echo "no"
 }
 
 check_already_connected() {
