@@ -29,19 +29,17 @@ is_pid_alive() {
 }
 
 # Check connection by asking the platform API for browser status.
-# If the browser is running via a node-provided path it confirms the node is
-# connected. This is more reliable than 'nodes status' which creates a second
-# WebSocket connection and fails with "device token mismatch" when the node is
-# already connected.
+# The node-provided browser profile has userDataDir under .openclaw-local.
+# We only need the profile config to be present (node connected), not Chrome
+# actively running — Chrome starts lazily on first use.
 is_browser_node_connected() {
   local resp
   resp=$(curl -sf --max-time 5 \
     "${API_URL}/internal/browser/status?profile=openclaw" \
     -H "Authorization: Bearer ${INTERNAL_TOKEN}" 2>/dev/null || echo '{}')
-  # Node-provided browser has userDataDir under .openclaw-local
-  echo "$resp" | grep -q '"running":true' \
-    && echo "$resp" | grep -q '\.openclaw-local' \
-    && echo "yes" || echo "no"
+  # A 503 returns {"ok":false,"error":"browser_unavailable"} — node not connected.
+  # A successful response (node connected) includes userDataDir with .openclaw-local.
+  echo "$resp" | grep -q '\.openclaw-local' && echo "yes" || echo "no"
 }
 
 check_already_connected() {
